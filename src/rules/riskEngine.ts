@@ -545,3 +545,64 @@ export class RiskEngine {
               p = p.parent;
             }
 
+            if (!guarded) {
+              const lc = sourceFile.getLineAndCharacterOfPosition(n.getStart(sourceFile));
+              unsafeDereference = {
+                line: lc.line + 1,
+                text: n.getText(sourceFile)
+              };
+            }
+          }
+        }
+        ts.forEachChild(n, checkNode);
+      };
+
+      checkNode(stmt);
+      if (unsafeDereference) break;
+    }
+
+    if (!hasNullCheck && unsafeDereference) {
+      const declLc = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+      const declLine = declLc.line + 1;
+      const refLine = (unsafeDereference as { line: number; text: string }).line;
+      const refText = (unsafeDereference as { line: number; text: string }).text;
+
+      if (isLineChanged(declLine) || isLineChanged(refLine)) {
+        findings.push({
+          id: `PC-NULL-${filePath}-${refLine}`,
+          ruleId: 'PC-DATA-001',
+          category: 'reliability',
+          title: `Unhandled Null/Undefined Database Result (${varName})`,
+          severity: 'MEDIUM',
+          description: `Database query result '${varName}' is dereferenced as '${refText}' without verifying if the record exists, risking runtime TypeError if not found.`,
+          file: filePath,
+          line: refLine,
+          snippet: getSnippet(refLine),
+          evidenceTrace: [
+            {
+              file: filePath,
+              line: declLine,
+              description: `Record looked up via ${initText}`
+            },
+            {
+              file: filePath,
+              line: refLine,
+              description: `Property accessed directly via '${refText}' without null guard (e.g. if (!${varName}) or ${varName}?.${refText.split('.')[1] || ''})`
+            }
+          ],
+          recommendation: `Check if '${varName}' is null before accessing properties, or use optional chaining (${varName}?.${refText.split('.')[1] || ''}).`
+        });
+      }
+    }
+  }
+
+  public static isTestFile(filePath: string): boolean {
+    const normalized = filePath.replace(/\\/g, '/');
+    return (
+      normalized.includes('.test.') ||
+      normalized.includes('.spec.') ||
+      normalized.includes('/__tests__/') ||
+      normalized.includes('/tests/')
+    );
+  }
+}
