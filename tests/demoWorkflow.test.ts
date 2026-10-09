@@ -28,3 +28,14 @@ describe('Killer Workflow Demo Fixture', () => {
     const passwordHashViolation = report.rules.find((r) =>
       r.rule.description.includes('passwordHash') && r.status === 'VIOLATION'
     );
+    expect(passwordHashViolation).toBeDefined();
+
+    // Verify Impact Analysis
+    const changedUserSymbol = report.impact.changedSymbols.find(
+      (s) => s.symbolName === 'getUser'
+    );
+    expect(changedUserSymbol).toBeDefined();
+    expect(changedUserSymbol?.callers.length).toBeGreaterThanOrEqual(3);
+    expect(report.impact.untestedCallersCount).toBeGreaterThan(0);
+  });
+});
