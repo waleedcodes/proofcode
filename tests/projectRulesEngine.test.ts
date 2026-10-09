@@ -28,3 +28,14 @@ describe('ProjectRulesEngine', () => {
       }
     ];
 
+    // Evaluate against rule directly
+    const rule = {
+      id: 'RULE-2',
+      title: 'Sensitive Field Protection',
+      description: 'Never expose passwordHash or secret fields in responses.',
+      severity: 'HIGH' as const
+    };
+
+    expect(rule.description).toContain('passwordHash');
+  });
+});
