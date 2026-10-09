@@ -39,3 +39,17 @@ index e69de29..49e29a1 100644
     const newFileDiff = `diff --git a/src/new-route.ts b/src/new-route.ts
 new file mode 100644
 index 0000000..49e29a1
+--- /dev/null
++++ b/src/new-route.ts
+@@ -0,0 +1,3 @@
++export async function GET() {
++  return Response.json({ status: 'ok' });
++}
+`;
+
+    const result = DiffParser.parse(newFileDiff, '/workspace');
+    expect(result.files).toHaveLength(1);
+    expect(result.files[0].isNew).toBe(true);
+    expect(result.files[0].addedLines).toEqual([1, 2, 3]);
+  });
+});
