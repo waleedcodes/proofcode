@@ -10,3 +10,8 @@ export async function GET(req: Request) {
 
   // Direct database query without session or ownership check
   const order = await db.order.findUnique({
+    where: { id: orderId }
+  });
+
+  return Response.json(order);
+}
