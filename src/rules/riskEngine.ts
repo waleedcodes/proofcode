@@ -143,3 +143,149 @@ export class RiskEngine {
         if (text === 'eval' || text === 'new Function' || text.endsWith('.exec') || text.endsWith('.execSync')) {
           const { line, column } = getLineAndColumn(node.getStart(sourceFile));
           if (isLineChanged(line) && node.arguments.length > 0) {
+            const firstArg = node.arguments[0];
+            // If argument is not a simple string literal, it's dynamic
+            if (!ts.isStringLiteral(firstArg)) {
+              findings.push({
+                id: `PC-EVAL-${filePath}-${line}`,
+                ruleId: 'PC-SEC-004',
+                category: 'security',
+                title: 'Dangerous Code/Command Execution',
+                severity: 'HIGH',
+                description: `Invoking ${text} with dynamic arguments can lead to arbitrary code or command execution.`,
+                file: filePath,
+                line,
+                column,
+                snippet: getSnippet(line),
+                evidenceTrace: [
+                  {
+                    file: filePath,
+                    line,
+                    description: `Invocation of ${text}(${firstArg.getText(sourceFile)})`
+                  }
+                ],
+                recommendation:
+                  'Avoid eval() or dynamic shell execution. Use safe alternative APIs or execFile with static arguments.'
+              });
+            }
+          }
+        }
+      }
+
+      // Rule: Unsafe User Input SSRF / Open Redirect
+      if (ts.isCallExpression(node)) {
+        const text = node.expression.getText(sourceFile);
+        if (
+          text === 'fetch' ||
+          text === 'axios' ||
+          text.startsWith('axios.') ||
+          text.endsWith('res.redirect') ||
+          text.endsWith('redirect')
+        ) {
+          if (node.arguments.length > 0) {
+            const argText = node.arguments[0].getText(sourceFile);
+            const { line, column } = getLineAndColumn(node.getStart(sourceFile));
+            if (
+              isLineChanged(line) &&
+              (argText.includes('req.body') ||
+                argText.includes('req.query') ||
+                argText.includes('req.params') ||
+                argText.includes('params.'))
+            ) {
+              findings.push({
+                id: `PC-SSRF-${filePath}-${line}`,
+                ruleId: 'PC-SEC-005',
+                category: 'security',
+                title: 'Unsafe User-Controlled URL / Potential SSRF',
+                severity: 'MEDIUM',
+                description:
+                  'User request parameter is passed directly into a network request or redirect without explicit validation or allowlisting.',
+                file: filePath,
+                line,
+                column,
+                snippet: getSnippet(line),
+                evidenceTrace: [
+                  {
+                    file: filePath,
+                    line,
+                    description: `Call to ${text}(${argText}) with user-controlled input`
+                  }
+                ],
+                recommendation:
+                  'Validate target URLs against an explicit allowlist and enforce URL protocol and host checks.'
+              });
+            }
+          }
+        }
+      }
+
+      // Rule: Missing Error Handling on Async Calls
+      if (ts.isAwaitExpression(node) && !isTest) {
+        const { line, column } = getLineAndColumn(node.getStart(sourceFile));
+        if (isLineChanged(line)) {
+          // Check if this await is inside a try-catch block
+          let parent: ts.Node | undefined = node.parent;
+          let insideTry = false;
+          while (parent) {
+            if (ts.isTryStatement(parent)) {
+              insideTry = true;
+              break;
+            }
+            if (
+              ts.isFunctionDeclaration(parent) ||
+              ts.isArrowFunction(parent) ||
+              ts.isMethodDeclaration(parent)
+            ) {
+              break;
+            }
+            parent = parent.parent;
+          }
+
+          if (!insideTry) {
+            // Also check if expression has .catch
+            const exprText = node.expression.getText(sourceFile);
+            if (!exprText.includes('.catch(')) {
+              findings.push({
+                id: `PC-ERR-${filePath}-${line}`,
+                ruleId: 'PC-REL-006',
+                category: 'reliability',
+                title: 'Unhandled Asynchronous Operation',
+                severity: 'LOW',
+                description:
+                  'Async operation is awaited without an enclosing try/catch block or promise catch handler.',
+                file: filePath,
+                line,
+                column,
+                snippet: getSnippet(line),
+                evidenceTrace: [
+                  {
+                    file: filePath,
+                    line,
+                    description: `await ${exprText} executed without try/catch wrapper`
+                  }
+                ],
+                recommendation:
+                  'Wrap async database and network calls in try/catch to handle potential failures gracefully.'
+              });
+            }
+          }
+        }
+      }
+
+      // Rule: Unhandled Null/Undefined Database Result
+      if (ts.isVariableDeclaration(node) && !isTest) {
+        this.checkUnhandledNullDbResult(node, sourceFile, filePath, isLineChanged, getSnippet, findings);
+      }
+
+      ts.forEachChild(node, visit);
+    };
+
+    ts.forEachChild(sourceFile, visit);
+
+    // Rule: Missing Authorization in API routes performing DB queries
+    if (isApiRoute) {
+      const authFindings = this.checkApiRouteAuthorization(
+        filePath,
+        sourceFile,
+        sourceText,
+        isLineChanged,
