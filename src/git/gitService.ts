@@ -129,3 +129,47 @@ export class GitService {
 
     const parsed = DiffParser.parse(diffOutput, repoRoot);
 
+    // Also check for untracked files and synthesize file diffs so new AI-created files are fully verified!
+    const statuses = await this.getStatus(repoRoot);
+    const untracked = statuses.filter((s) => s.status === 'untracked');
+
+    for (const item of untracked) {
+      const fullPath = path.resolve(repoRoot, item.path);
+      try {
+        const stat = await fs.promises.stat(fullPath);
+        if (stat.isFile()) {
+          const content = await fs.promises.readFile(fullPath, 'utf8');
+          const fileLines = content.split('\n');
+          const addedLines = fileLines.map((_, idx) => idx + 1);
+
+          parsed.files.push({
+            oldPath: item.path,
+            newPath: item.path,
+            isNew: true,
+            isDeleted: false,
+            isRenamed: false,
+            hunks: [
+              {
+                oldStart: 0,
+                oldLines: 0,
+                newStart: 1,
+                newLines: fileLines.length,
+                header: `@@ -0,0 +1,${fileLines.length} @@`,
+                lines: fileLines.map((l) => `+${l}`)
+              }
+            ],
+            addedLines,
+            deletedLines: [],
+            modifiedLineRanges: [{ start: 1, end: fileLines.length }]
+          });
+          parsed.totalFilesChanged++;
+          parsed.totalInsertions += fileLines.length;
+        }
+      } catch {
+        // Skip unreadable or directory items
+      }
+    }
+
+    return parsed;
+  }
+}
