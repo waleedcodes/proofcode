@@ -362,3 +362,95 @@ export class RiskEngine {
             severity: pattern.severity,
             description: `Potential hardcoded secret or credential found in source code: ${pattern.name}.`,
             file: filePath,
+            line: lineNum,
+            snippet: getSnippet(lineNum),
+            evidenceTrace: [
+              {
+                file: filePath,
+                line: lineNum,
+                description: `Sensitive literal matched pattern for ${pattern.name}`
+              }
+            ],
+            recommendation:
+              'Never commit credentials to source control. Move the secret to environment variables or secret manager.'
+          });
+          break;
+        }
+      }
+    });
+
+    return findings;
+  }
+
+  private static checkApiRouteAuthorization(
+    filePath: string,
+    sourceFile: ts.SourceFile,
+    sourceText: string,
+    isLineChanged: (line: number) => boolean,
+    getSnippet: (line: number) => string
+  ): RiskFinding[] {
+    const findings: RiskFinding[] = [];
+
+    // Check if the file imports or uses actual auth utilities (stripping comments)
+    const codeWithoutComments = sourceText.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '');
+    const hasAuthCheck =
+      /\b(auth|session|getServerSession|verifyToken|jwt\.verify|req\.user|req\.session|requireAuth|authenticate|useSession)\b/i.test(
+        codeWithoutComments
+      );
+
+    // Look for route handler functions
+    const visit = (node: ts.Node) => {
+      let isHandler = false;
+      let handlerName = '';
+
+      if (ts.isFunctionDeclaration(node) && node.name) {
+        handlerName = node.name.text;
+        isHandler = /^(GET|POST|PUT|DELETE|PATCH)$/i.test(handlerName) || handlerName === 'handler';
+      } else if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
+        handlerName = node.name.text;
+        isHandler = /^(GET|POST|PUT|DELETE|PATCH)$/i.test(handlerName);
+      }
+
+      if (isHandler && node) {
+        const handlerText = node.getText(sourceFile);
+        const codeInHandler = handlerText.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '');
+
+        const hasDbQuery =
+          /\b(db|prisma|order|user|account|payment)(\.[a-zA-Z0-9_$]+)*\.(find|create|update|delete|query|findUnique|findMany)\b/i.test(
+            codeInHandler
+          );
+
+        const hasLocalAuth =
+          /\b(auth|session|getServerSession|req\.user|verifyToken|jwt|requireAuth)\b/i.test(
+            codeInHandler
+          );
+
+        if (hasDbQuery && !hasLocalAuth && !hasAuthCheck) {
+          const lc = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+          const line = lc.line + 1;
+
+          if (isLineChanged(line)) {
+            const trace: EvidenceTraceStep[] = [
+              {
+                file: filePath,
+                line,
+                symbol: handlerName,
+                description: `Route handler ${handlerName} receives client request`
+              },
+              {
+                file: filePath,
+                line,
+                description: 'Handler performs database query / resource mutation'
+              },
+              {
+                file: filePath,
+                line,
+                description: 'NO authentication/authorization or session ownership check found in handler body'
+              }
+            ];
+
+            findings.push({
+              id: `PC-AUTH-${filePath}-${line}`,
+              ruleId: 'PC-AUTH-001',
+              category: 'authorization',
+              title: `Missing Authorization Check in API Route (${handlerName})`,
