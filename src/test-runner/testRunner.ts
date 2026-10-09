@@ -55,3 +55,69 @@ export class TestRunner {
         timeout: this.timeoutMs,
         maxBuffer: 5 * 1024 * 1024
       });
+
+      return {
+        name,
+        status: 'PASS',
+        durationMs: Date.now() - startTime,
+        message: 'Completed successfully without errors.',
+        details: stdout.slice(0, 500)
+      };
+    } catch (err: unknown) {
+      const execError = err as { stdout?: string; stderr?: string; message?: string };
+      const output = `${execError.stdout || ''}\n${execError.stderr || ''}`.trim();
+
+      return {
+        name,
+        status: 'FAIL',
+        durationMs: Date.now() - startTime,
+        message: 'Checks reported errors.',
+        details: output.slice(0, 1000) || execError.message
+      };
+    }
+  }
+
+  public async runTypeScriptCheck(workspaceRoot: string): Promise<CheckResult> {
+    const tsconfigPath = path.join(workspaceRoot, 'tsconfig.json');
+    if (!fs.existsSync(tsconfigPath)) {
+      return {
+        name: 'TypeScript',
+        status: 'SKIPPED',
+        message: 'No tsconfig.json found in project root.'
+      };
+    }
+
+    const scripts = this.getPackageScripts(workspaceRoot);
+    const pm = this.detectPackageManager(workspaceRoot);
+
+    let cmd = 'npx tsc --noEmit';
+    if (scripts['typecheck']) {
+      cmd = `${pm} run typecheck`;
+    } else if (scripts['type-check']) {
+      cmd = `${pm} run type-check`;
+    }
+
+    return this.executeCommand(cmd, workspaceRoot, 'TypeScript');
+  }
+
+  public async runLint(workspaceRoot: string): Promise<CheckResult> {
+    const scripts = this.getPackageScripts(workspaceRoot);
+    const pm = this.detectPackageManager(workspaceRoot);
+
+    if (scripts['lint']) {
+      return this.executeCommand(`${pm} run lint`, workspaceRoot, 'ESLint');
+    }
+
+    const hasEslint =
+      fs.existsSync(path.join(workspaceRoot, '.eslintrc.json')) ||
+      fs.existsSync(path.join(workspaceRoot, '.eslintrc.js')) ||
+      fs.existsSync(path.join(workspaceRoot, 'eslint.config.js')) ||
+      fs.existsSync(path.join(workspaceRoot, 'eslint.config.mjs'));
+
+    if (hasEslint) {
+      return this.executeCommand('npx eslint .', workspaceRoot, 'ESLint');
+    }
+
+    return {
+      name: 'ESLint',
+      status: 'SKIPPED',
