@@ -1026,3 +1026,208 @@ export class ProofCodeWebviewPanel {
             <div class="risk-title-wrap">
               <span class="severity-tag ${b.severity.toLowerCase()}">${b.severity}</span>
               <span class="risk-title">${b.area}: ${b.trigger}</span>
+            </div>
+            ${
+              b.evidenceFile
+                ? `<button class="btn btn-secondary open-evidence-btn" data-file="${b.evidenceFile}" data-line="${b.evidenceLine || 1}">
+                    🔍 Open Evidence (${path.basename(b.evidenceFile)}:${b.evidenceLine || 1})
+                  </button>`
+                : ''
+            }
+          </div>
+          <p style="color: #CBD5E1; margin-bottom: 8px;"><strong>Impact:</strong> ${b.detail}</p>
+          ${
+            b.affectedCallersOrRoutes.length > 0
+              ? `<div style="margin-top: 8px; font-size: 12px; color: var(--text-muted);">
+                   <strong>Dependents at risk:</strong> ${b.affectedCallersOrRoutes
+                     .map(
+                       (c) =>
+                         `<code style="background: rgba(255,255,255,0.06); padding: 2px 6px; border-radius: 4px; margin-right: 4px; color: #93C5FD;">${c}</code>`
+                     )
+                     .join(' ')}
+                 </div>`
+              : ''
+          }
+        </div>
+      `
+            )
+            .join('')
+    }
+  </section>
+
+  <!-- TAB 2: IMPACT & VISUAL BLAST GRAPH -->
+  <section class="tab-pane" id="tab-impact">
+    ${
+      !impact || impact.changedSymbols.length === 0
+        ? `<div class="card empty-state"><h3>⚡ No exported symbols were modified.</h3></div>`
+        : `
+      <!-- Toolbar -->
+      <div class="impact-toolbar">
+        <div class="impact-search-box">
+          <input type="text" id="impact-search" class="impact-search-input" placeholder="🔍 Search functions, callers, files..." />
+        </div>
+        <div class="impact-filter-pills">
+          <button class="filter-pill active" data-filter="all">All Symbols (${impact.changedSymbols.length})</button>
+          <button class="filter-pill danger" data-filter="untested">⚠️ Untested Callers (${impact.untestedCallersCount})</button>
+          <button class="filter-pill" data-filter="routes">🌐 API Routes (${impact.affectedRoutes.length})</button>
+        </div>
+      </div>
+
+      <!-- Symbols Blast Graph -->
+      <div id="impact-symbols-container">
+        ${impact.changedSymbols
+          .map((sym) => {
+            const untestedCallers = sym.callers.filter((c) => !c.hasTest);
+            return `
+          <div class="blast-symbol-card" data-symbol="${escapeHtml(sym.symbolName.toLowerCase())}" data-file="${escapeHtml(path.basename(sym.filePath).toLowerCase())}" data-untested="${untestedCallers.length}">
+            <div class="blast-header">
+              <div class="blast-symbol-info">
+                <div class="symbol-glyph">ƒ</div>
+                <div>
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <span class="symbol-name-text">${escapeHtml(sym.symbolName)}</span>
+                    <span class="symbol-kind-tag">${sym.kind}</span>
+                    ${sym.isApiRoute ? '<span class="tag-tested" style="font-size: 9px;">API ROUTE</span>' : ''}
+                  </div>
+                  <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                    in <code>${escapeHtml(path.relative(report?.repoRoot || '', sym.filePath))}</code>
+                  </div>
+                </div>
+              </div>
+              <div class="blast-metrics">
+                <span class="metric-chip">${sym.callers.length} Callers</span>
+                <span class="metric-chip ${untestedCallers.length > 0 ? 'warn' : ''}">${untestedCallers.length} Untested</span>
+                <button class="btn btn-secondary open-evidence-btn" style="padding: 4px 10px; font-size: 11px;" data-file="${escapeHtml(sym.filePath)}" data-line="1">
+                  View Definition
+                </button>
+              </div>
+            </div>
+
+            <!-- Downstream Tree Branches -->
+            ${
+              sym.callers.length === 0
+                ? `<div style="padding: 8px 12px; color: var(--text-muted); font-size: 11px; font-style: italic;">
+                     No downstream callers detected in repository (leaf module or top-level entrypoint).
+                   </div>`
+                : `
+                <div class="blast-tree-container">
+                  ${sym.callers
+                    .map(
+                      (c) => `
+                    <div class="blast-caller-node ${c.hasTest ? 'tested' : 'untested'}" data-caller="${escapeHtml(c.callerName.toLowerCase())}" data-tested="${c.hasTest ? 'true' : 'false'}">
+                      <div class="caller-details">
+                        <span class="caller-icon">↳</span>
+                        <span class="caller-name">${escapeHtml(c.callerName)}</span>
+                        <span class="caller-file">${escapeHtml(path.basename(c.filePath))}:${c.line}</span>
+                        ${
+                          c.hasTest
+                            ? `<span class="tag-tested">✓ Test Covered</span>`
+                            : `<span class="tag-untested">⚠️ Untested Caller</span>`
+                        }
+                      </div>
+                      <button class="btn btn-secondary open-evidence-btn" style="padding: 3px 8px; font-size: 11px;" data-file="${escapeHtml(c.filePath)}" data-line="${c.line}">
+                        Open Caller
+                      </button>
+                    </div>
+                  `
+                    )
+                    .join('')}
+                </div>
+              `
+            }
+          </div>
+        `;
+          })
+          .join('')}
+      </div>
+
+      <!-- Connected API Routes Section -->
+      ${
+        impact.affectedRoutes.length > 0
+          ? `
+        <div class="routes-section-card">
+          <div style="font-weight: 700; font-size: 13px; color: #FFFFFF; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+            <span>🌐</span> Directly Affected API Endpoints (${impact.affectedRoutes.length})
+          </div>
+          ${impact.affectedRoutes
+            .map(
+              (r) => `
+            <div class="route-item-row">
+              <div>
+                <span class="route-badge">${escapeHtml(r.method)}</span>
+                <strong style="color: #F8FAFC; font-family: var(--mono-family); font-size: 12px;">${escapeHtml(r.routePath)}</strong>
+                <span style="color: var(--text-muted); font-size: 11px; margin-left: 8px;">(${escapeHtml(path.basename(r.filePath))}:${r.line})</span>
+              </div>
+              <button class="btn btn-secondary open-evidence-btn" style="padding: 3px 8px; font-size: 11px;" data-file="${escapeHtml(r.filePath)}" data-line="${r.line}">
+                Open Route
+              </button>
+            </div>
+          `
+            )
+            .join('')}
+        </div>
+      `
+          : ''
+      }
+    `
+    }
+  </section>
+
+  <!-- TAB 3: RULES -->
+  <section class="tab-pane" id="tab-rules">
+    <div class="card">
+      <table class="rules-table">
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Project Rule</th>
+            <th>Evidence / Details</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${
+            rules.length === 0
+              ? '<tr><td colspan="4" style="text-align: center;">No rules defined. Click "Edit Rules" to create .proofcode/rules.md.</td></tr>'
+              : rules
+                  .map(
+                    (r) => `
+            <tr>
+              <td>
+                <span class="severity-tag ${r.status === 'PASS' ? 'low' : r.status === 'VIOLATION' ? 'high' : 'medium'}">
+                  ${r.status}
+                </span>
+              </td>
+              <td>
+                <strong>${r.rule.title}</strong>
+                <div style="font-size: 11px; color: var(--text-muted);">${r.rule.description}</div>
+              </td>
+              <td style="color: ${r.status === 'VIOLATION' ? 'var(--danger)' : '#CBD5E1'};">
+                ${r.detectedMessage || 'Compliant with policy.'}
+              </td>
+              <td>
+                ${
+                  r.file && r.line
+                    ? `<button class="btn btn-secondary open-evidence-btn" data-file="${r.file}" data-line="${r.line}">View Code</button>`
+                    : '<span style="color: var(--text-muted);">—</span>'
+                }
+              </td>
+            </tr>
+          `
+                  )
+                  .join('')
+          }
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- TAB 4: CHECKS -->
+  <section class="tab-pane" id="tab-checks">
+    <div class="card">
+      <table class="rules-table">
+        <thead>
+          <tr>
+            <th>Check Name</th>
+            <th>Status</th>
+            <th>Details</th>
