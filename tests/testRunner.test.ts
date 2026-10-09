@@ -28,3 +28,13 @@ describe('TestRunner', () => {
     expect(runner.detectPackageManager(tempDir)).toBe('yarn');
 
     fs.unlinkSync(path.join(tempDir, 'yarn.lock'));
+    fs.writeFileSync(path.join(tempDir, 'bun.lockb'), '');
+    expect(runner.detectPackageManager(tempDir)).toBe('bun');
+  });
+
+  it('should skip TypeScript check if no tsconfig.json exists', async () => {
+    const runner = new TestRunner();
+    const result = await runner.runTypeScriptCheck(tempDir);
+    expect(result.status).toBe('SKIPPED');
+  });
+});
