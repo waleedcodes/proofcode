@@ -12,3 +12,19 @@ describe('Killer Workflow Demo Fixture', () => {
     expect(report).toBeDefined();
     expect(report.verdict).toBe('BLOCKED');
     expect(report.summary.highRiskCount).toBeGreaterThanOrEqual(1);
+
+    // Verify SQL injection detection
+    const sqlRisk = report.risks.find((r) => r.ruleId === 'PC-SEC-001');
+    expect(sqlRisk).toBeDefined();
+    expect(sqlRisk?.file).toContain('login/route.ts');
+
+    // Verify Missing Authorization in API route
+    const authRisk = report.risks.find(
+      (r) => r.ruleId === 'PC-AUTH-001' && r.file.includes('orders')
+    );
+    expect(authRisk).toBeDefined();
+
+    // Verify Rule Violations
+    const passwordHashViolation = report.rules.find((r) =>
+      r.rule.description.includes('passwordHash') && r.status === 'VIOLATION'
+    );
