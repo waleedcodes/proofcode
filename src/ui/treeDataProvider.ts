@@ -97,3 +97,117 @@ export class ProofCodeTreeDataProvider implements vscode.TreeDataProvider<ProofC
         'checks'
       );
       checksItem.iconPath = new vscode.ThemeIcon('beaker');
+
+      const items = [scoreItem, filesItem, impactItem];
+
+      if (report.breakageRisks && report.breakageRisks.length > 0) {
+        const breakageItem = new ProofCodeTreeItem(
+          `What Could Break (${report.breakageRisks.length})`,
+          vscode.TreeItemCollapsibleState.Expanded,
+          'breakage'
+        );
+        breakageItem.iconPath = new vscode.ThemeIcon('flame');
+        items.push(breakageItem);
+      }
+
+      items.push(risksItem, rulesItem, checksItem);
+      return items;
+    }
+
+    // Children of Changed Files
+    if (element.contextValue === 'changed_files') {
+      return report.impact.changedFiles.map((file) => {
+        const baseName = path.basename(file);
+        const item = new ProofCodeTreeItem(baseName, vscode.TreeItemCollapsibleState.None);
+        item.description = path.relative(report.repoRoot, file);
+        item.iconPath = new vscode.ThemeIcon('file-code');
+        item.command = {
+          command: 'vscode.open',
+          title: 'Open File',
+          arguments: [vscode.Uri.file(file)]
+        };
+        return item;
+      });
+    }
+
+    // Children of Impact
+    if (element.contextValue === 'impact') {
+      const items: ProofCodeTreeItem[] = [];
+
+      for (const sym of report.impact.changedSymbols) {
+        const item = new ProofCodeTreeItem(
+          `${sym.symbolName} (${sym.callers.length} callers)`,
+          vscode.TreeItemCollapsibleState.None
+        );
+        item.description = path.basename(sym.filePath);
+        item.iconPath = new vscode.ThemeIcon('symbol-function');
+        items.push(item);
+      }
+
+      for (const route of report.impact.affectedRoutes) {
+        const item = new ProofCodeTreeItem(
+          `${route.method} ${path.basename(route.routePath)}`,
+          vscode.TreeItemCollapsibleState.None
+        );
+        item.description = 'API Route';
+        item.iconPath = new vscode.ThemeIcon('globe');
+        items.push(item);
+      }
+
+      if (items.length === 0) {
+        return [
+          new ProofCodeTreeItem('No external impact detected', vscode.TreeItemCollapsibleState.None)
+        ];
+      }
+
+      return items;
+    }
+
+    // Children of What Could Break
+    if (element.contextValue === 'breakage') {
+      return (report.breakageRisks || []).map((b) => {
+        const item = new ProofCodeTreeItem(
+          `[${b.severity}] ${b.area}: ${b.trigger}`,
+          vscode.TreeItemCollapsibleState.None
+        );
+        item.description = b.detail;
+        item.tooltip = `${b.detail}\nDependents: ${b.affectedCallersOrRoutes.join(', ')}`;
+        item.iconPath = new vscode.ThemeIcon(
+          b.severity === 'HIGH' ? 'error' : b.severity === 'MEDIUM' ? 'warning' : 'info'
+        );
+        if (b.evidenceFile) {
+          item.command = {
+            command: 'proofcode.openEvidence',
+            title: 'Open Evidence',
+            arguments: [b.evidenceFile, b.evidenceLine || 1]
+          };
+        }
+        return item;
+      });
+    }
+
+    // Children of Risks
+    if (element.contextValue === 'risks') {
+      if (report.risks.length === 0) {
+        const item = new ProofCodeTreeItem(
+          '✓ No static risks detected in changes',
+          vscode.TreeItemCollapsibleState.None
+        );
+        item.iconPath = new vscode.ThemeIcon('pass');
+        return [item];
+      }
+
+      return report.risks.map((risk: RiskFinding) => {
+        const icon =
+          risk.severity === 'HIGH'
+            ? 'error'
+            : risk.severity === 'MEDIUM'
+            ? 'warning'
+            : 'info';
+
+        const item = new ProofCodeTreeItem(
+          `[${risk.severity}] ${risk.title}`,
+          vscode.TreeItemCollapsibleState.None,
+          'risk_item',
+          risk
+        );
