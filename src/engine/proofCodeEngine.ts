@@ -87,3 +87,92 @@ export class ProofCodeEngine {
     }
 
     // 5. Project Rules Verification
+    const rulesEngine = new ProjectRulesEngine(activeRoot, options.rulesFilePath);
+    const ruleResults = await rulesEngine.evaluateRules(filesToVerify, graph);
+
+    // 6. Test Runner Checks
+    let tsCheck: CheckResult = { name: 'TypeScript', status: 'PASS', message: 'Ready' };
+    let lintCheck: CheckResult = { name: 'ESLint', status: 'PASS', message: 'Ready' };
+    let unitTestsCheck: CheckResult = { name: 'Unit Tests', status: 'SKIPPED', message: 'Not run' };
+    let buildCheck: CheckResult = { name: 'Build', status: 'SKIPPED', message: 'Not run' };
+
+    if (options.runLiveTests) {
+      [tsCheck, lintCheck, unitTestsCheck, buildCheck] = await Promise.all([
+        this.testRunner.runTypeScriptCheck(repoRoot),
+        this.testRunner.runLint(repoRoot),
+        this.testRunner.runUnitTests(repoRoot),
+        this.testRunner.runBuild(repoRoot)
+      ]);
+    }
+
+    // 7. Calculate Verification Score
+    const score = this.calculateVerificationScore({
+      filesChanged: filesToVerify,
+      risks: allRisks,
+      rules: ruleResults,
+      untestedCallersCount: impact.untestedCallersCount,
+      checks: { tsCheck, lintCheck, unitTestsCheck, buildCheck }
+    });
+
+    // 8. Determine Verdict
+    const verdict = this.determineVerdict(score.total, allRisks, ruleResults, {
+      tsCheck,
+      lintCheck,
+      unitTestsCheck
+    });
+
+    // Count test files touched
+    const testsAdded = filesToVerify.filter(
+      (f) => f.isNew && graph.isTestFile(f.newPath)
+    ).length;
+    const testsAffected = filesToVerify.filter((f) => graph.isTestFile(f.newPath)).length;
+
+    const highRiskCount = allRisks.filter((r) => r.severity === 'HIGH').length;
+    const mediumRiskCount = allRisks.filter((r) => r.severity === 'MEDIUM').length;
+    const lowRiskCount = allRisks.filter((r) => r.severity === 'LOW').length;
+
+    const totalLinesAdded = filesToVerify.reduce((acc, f) => acc + f.addedLines.length, 0);
+    const totalLinesDeleted = filesToVerify.reduce((acc, f) => acc + f.deletedLines.length, 0);
+
+    const breakageRisks = this.computeBreakageRisks(impact, allRisks, ruleResults);
+
+    return {
+      timestamp: new Date().toISOString(),
+      repoRoot: activeRoot,
+      branch,
+      score,
+      verdict,
+      summary: {
+        filesChanged: filesToVerify.length,
+        linesAdded: totalLinesAdded,
+        linesDeleted: totalLinesDeleted,
+        symbolsAffected: impact.changedSymbols.length,
+        apiRoutesAffected: impact.affectedRoutes.length,
+        testsAdded,
+        testsAffected,
+        highRiskCount,
+        mediumRiskCount,
+        lowRiskCount
+      },
+      impact,
+      risks: allRisks,
+      breakageRisks,
+      rules: ruleResults,
+      checks: {
+        typescript: tsCheck,
+        eslint: lintCheck,
+        unitTests: unitTestsCheck,
+        build: buildCheck
+      }
+    };
+  }
+
+  private calculateVerificationScore(params: {
+    filesChanged: FileDiff[];
+    risks: RiskFinding[];
+    rules: { status: string }[];
+    untestedCallersCount: number;
+    checks: {
+      tsCheck: CheckResult;
+      lintCheck: CheckResult;
+      unitTestsCheck: CheckResult;
