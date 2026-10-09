@@ -40,3 +40,17 @@ export function handleOrder(userId: string) {
     await graph.buildGraph([userPath, orderPath]);
 
     const dependents = graph.getDependents(userPath);
+    expect(dependents.has(orderPath)).toBe(true);
+
+    const changedLinesMap = new Map<string, number[]>();
+    changedLinesMap.set(userPath, [1]);
+
+    const impact = graph.computeImpact(changedLinesMap);
+    expect(impact.changedFiles).toContain(userPath);
+    expect(impact.changedSymbols).toHaveLength(1);
+    expect(impact.changedSymbols[0].symbolName).toBe('getUser');
+    expect(impact.changedSymbols[0].callers).toHaveLength(1);
+    expect(impact.changedSymbols[0].callers[0].callerName).toBe('handleOrder');
+    expect(impact.untestedCallersCount).toBe(1);
+  });
+});
