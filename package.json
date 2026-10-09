@@ -1,0 +1,169 @@
+{
+  "name": "proofcode",
+  "displayName": "ProofCode - Code Change Verification",
+  "description": "AI writes code. ProofCode proves the change. Verify impact, detect risks with evidence, and check project rules before shipping.",
+  "version": "0.1.0",
+  "publisher": "proofcode",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/waleedcodes/proofcode.git"
+  },
+  "bugs": {
+    "url": "https://github.com/waleedcodes/proofcode/issues"
+  },
+  "homepage": "https://github.com/waleedcodes/proofcode#readme",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Testing",
+    "Linters",
+    "Other"
+  ],
+  "keywords": [
+    "verification",
+    "impact-analysis",
+    "ai-code",
+    "code-review",
+    "security",
+    "git-diff"
+  ],
+  "main": "./dist/extension.js",
+  "bin": {
+    "proofcode": "./dist/cli.js"
+  },
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "proofcode-explorer",
+          "title": "ProofCode",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "proofcode-explorer": [
+        {
+          "id": "proofcode.views.overview",
+          "name": "Verification Overview",
+          "type": "tree"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "proofcode.verifyChange",
+        "title": "Verify Current Changes",
+        "category": "ProofCode",
+        "icon": "$(shield)"
+      },
+      {
+        "command": "proofcode.openDashboard",
+        "title": "Open Verification Dashboard",
+        "category": "ProofCode",
+        "icon": "$(dashboard)"
+      },
+      {
+        "command": "proofcode.initRules",
+        "title": "Initialize .proofcode/rules.md",
+        "category": "ProofCode",
+        "icon": "$(file-code)"
+      },
+      {
+        "command": "proofcode.openEvidence",
+        "title": "Open Evidence Location",
+        "category": "ProofCode"
+      },
+      {
+        "command": "proofcode.exportReport",
+        "title": "Export Verification Report",
+        "category": "ProofCode",
+        "icon": "$(desktop-download)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "proofcode.verifyChange",
+          "when": "view == proofcode.views.overview",
+          "group": "navigation@1"
+        },
+        {
+          "command": "proofcode.openDashboard",
+          "when": "view == proofcode.views.overview",
+          "group": "navigation@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "proofcode.verifyChange"
+        },
+        {
+          "command": "proofcode.openDashboard"
+        },
+        {
+          "command": "proofcode.initRules"
+        },
+        {
+          "command": "proofcode.exportReport"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "ProofCode",
+      "properties": {
+        "proofcode.autoVerifyOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically update impact and risk analysis when files are saved."
+        },
+        "proofcode.runTestsOnVerify": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically run project tests when verifying changes."
+        },
+        "proofcode.rulesFilePath": {
+          "type": "string",
+          "default": ".proofcode/rules.md",
+          "description": "Path to the project rules markdown file."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "compile": "tsc -p ./ --noEmit",
+    "build": "node esbuild.config.js --production",
+    "build:dev": "node esbuild.config.js",
+    "watch": "node esbuild.config.js --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src --ext .ts",
+    "lint:fix": "eslint src --ext .ts --fix",
+    "typecheck": "tsc --noEmit",
+    "cli": "node dist/cli.js",
+    "demo": "tsx scripts/run-demo.ts",
+    "package": "npx @vscode/vsce package --no-dependencies"
+  },
+  "dependencies": {
+    "typescript": "~5.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.12",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "@vitest/coverage-v8": "^2.1.9",
+    "esbuild": "^0.23.1",
+    "eslint": "^8.57.0",
+    "tsx": "^4.23.15",
+    "vitest": "^2.0.5"
+  }
+}
