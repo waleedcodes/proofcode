@@ -45,3 +45,58 @@ describe('ProofCodeEngine & ReportFormatter', () => {
             kind: 'function',
             filePath: 'src/user.ts',
             callers: [
+              {
+                callerName: 'renderDashboard',
+                filePath: 'src/dashboard.ts',
+                line: 25,
+                hasTest: false
+              }
+            ],
+            isApiRoute: false
+          }
+        ],
+        affectedFiles: ['src/dashboard.ts'],
+        affectedCallers: [],
+        affectedRoutes: [],
+        totalCallersCount: 1,
+        untestedCallersCount: 1
+      },
+      risks: [
+        {
+          id: 'RISK-1',
+          ruleId: 'PC-SEC-005',
+          category: 'security',
+          title: 'Unsafe User-Controlled URL',
+          severity: 'MEDIUM',
+          description: 'Parameter passed to fetch without validation',
+          file: 'src/proxy.ts',
+          line: 14,
+          snippet: 'fetch(req.body.url)',
+          evidenceTrace: [
+            {
+              file: 'src/proxy.ts',
+              line: 14,
+              description: 'fetch called with req.body.url'
+            }
+          ],
+          recommendation: 'Validate url parameter'
+        }
+      ],
+      rules: [
+        {
+          rule: {
+            id: 'RULE-1',
+            title: 'API Authentication',
+            description: 'Authenticate all routes',
+            severity: 'HIGH'
+          },
+          status: 'PASS'
+        }
+      ],
+      checks: {
+        typescript: { name: 'TypeScript', status: 'PASS' },
+        eslint: { name: 'ESLint', status: 'PASS' },
+        unitTests: { name: 'Unit Tests', status: 'PASS' },
+        build: { name: 'Build Check', status: 'PASS' }
+      }
+    };
