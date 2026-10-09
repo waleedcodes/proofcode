@@ -221,3 +221,153 @@ export class ProofCodeEngine {
       const deduction = Math.min(30, violations * 15);
       currentScore -= deduction;
       deductions.push({
+        reason: `${violations} Project Rule Violation(s)`,
+        amount: deduction
+      });
+    }
+
+    // Deduct for Rule Warnings (5 pts each)
+    const warnings = params.rules.filter((r) => r.status === 'WARNING').length;
+    if (warnings > 0) {
+      const deduction = Math.min(10, warnings * 5);
+      currentScore -= deduction;
+      deductions.push({
+        reason: `${warnings} Project Rule Warning(s)`,
+        amount: deduction
+      });
+    }
+
+    // Deduct for untested callers (up to 15 pts)
+    if (params.untestedCallersCount > 0) {
+      const deduction = Math.min(15, params.untestedCallersCount * 3);
+      currentScore -= deduction;
+      deductions.push({
+        reason: `${params.untestedCallersCount} Affected Caller(s) without test coverage`,
+        amount: deduction
+      });
+    }
+
+    // Check failures
+    if (params.checks.tsCheck.status === 'FAIL') {
+      currentScore -= 20;
+      deductions.push({ reason: 'TypeScript compilation failure', amount: 20 });
+    }
+    if (params.checks.lintCheck.status === 'FAIL') {
+      currentScore -= 10;
+      deductions.push({ reason: 'Linter reported errors', amount: 10 });
+    }
+    if (params.checks.unitTestsCheck.status === 'FAIL') {
+      currentScore -= 25;
+      deductions.push({ reason: 'Unit test suite failed', amount: 25 });
+    }
+
+    return {
+      total: Math.max(0, Math.min(100, currentScore)),
+      deductions
+    };
+  }
+
+  private determineVerdict(
+    score: number,
+    risks: RiskFinding[],
+    rules: { status: string }[],
+    checks: {
+      tsCheck: CheckResult;
+      lintCheck: CheckResult;
+      unitTestsCheck: CheckResult;
+    }
+  ): VerificationVerdict {
+    const hasHighRisk = risks.some((r) => r.severity === 'HIGH');
+    const hasRuleViolation = rules.some((r) => r.status === 'VIOLATION');
+    const hasTestFailure = checks.unitTestsCheck.status === 'FAIL';
+    const hasTsFailure = checks.tsCheck.status === 'FAIL';
+
+    if (hasHighRisk || hasRuleViolation || hasTestFailure || hasTsFailure || score < 50) {
+      return 'BLOCKED';
+    }
+
+    if (score < 85 || risks.some((r) => r.severity === 'MEDIUM')) {
+      return 'NEEDS_REVIEW';
+    }
+
+    return 'READY_TO_SHIP';
+  }
+
+  private computeBreakageRisks(
+    impact: ImpactAnalysis,
+    risks: RiskFinding[],
+    rules: RuleResult[]
+  ): BreakageRiskItem[] {
+    const breakage: BreakageRiskItem[] = [];
+
+    // 1. Check for touched auth/session services affecting routes/callers
+    const authSymbols = impact.changedSymbols.filter(
+      (s) =>
+        /auth|session|token|user|login|permission/i.test(s.symbolName) ||
+        /auth|session/i.test(s.filePath)
+    );
+    for (const s of authSymbols) {
+      if (s.callers.length > 0) {
+        const untested = s.callers.filter((c) => !c.hasTest);
+        breakage.push({
+          id: `BRK-AUTH-${s.symbolName}`,
+          severity: 'HIGH',
+          area: 'Authentication & Session Flow',
+          trigger: `Symbol '${s.symbolName}' was modified in ${path.basename(s.filePath)}.`,
+          detail: `${s.callers.length} downstream caller(s) depend on this behavior.${
+            untested.length > 0 ? ` ${untested.length} caller(s) lack automated test coverage.` : ''
+          }`,
+          affectedCallersOrRoutes: s.callers.map((c) => `${c.callerName} (${path.basename(c.filePath)})`),
+          evidenceFile: s.filePath
+        });
+      }
+    }
+
+    // 2. Check for high risks on routes & logic (SQL injection, Missing Auth, Secrets)
+    for (const r of risks.filter((r) => r.severity === 'HIGH')) {
+      breakage.push({
+        id: `BRK-RISK-${r.id}`,
+        severity: 'HIGH',
+        area: r.category === 'authorization' ? 'API Access Control' : 'Data Security',
+        trigger: r.title,
+        detail: r.description,
+        affectedCallersOrRoutes: [path.basename(r.file)],
+        evidenceFile: r.file,
+        evidenceLine: r.line
+      });
+    }
+
+    // 3. Check for rule violations (e.g. sensitive data exposure or ownership)
+    for (const rule of rules.filter((res) => res.status === 'VIOLATION')) {
+      breakage.push({
+        id: `BRK-RULE-${rule.rule.id}`,
+        severity: rule.rule.severity,
+        area: 'Project Policy & Architecture',
+        trigger: `Violated: "${rule.rule.title}"`,
+        detail: rule.detectedMessage || rule.rule.description,
+        affectedCallersOrRoutes: rule.file ? [path.basename(rule.file)] : [],
+        evidenceFile: rule.file,
+        evidenceLine: rule.line
+      });
+    }
+
+    // 4. Untested Callers on Core Services
+    const generalUntested = impact.changedSymbols.filter(
+      (s) => !authSymbols.includes(s) && s.callers.some((c) => !c.hasTest)
+    );
+    for (const s of generalUntested.slice(0, 5)) {
+      const untested = s.callers.filter((c) => !c.hasTest);
+      breakage.push({
+        id: `BRK-UNTESTED-${s.symbolName}`,
+        severity: 'MEDIUM',
+        area: 'Regression Vulnerability',
+        trigger: `Modified '${s.symbolName}' has untested dependents.`,
+        detail: `${untested.length} caller(s) do not have regression tests to verify that this change does not break them.`,
+        affectedCallersOrRoutes: untested.map((c) => `${c.callerName} (${path.basename(c.filePath)})`),
+        evidenceFile: s.filePath
+      });
+    }
+
+    return breakage;
+  }
+}
