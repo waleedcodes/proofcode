@@ -9,3 +9,16 @@ describe('Extension Lifecycle', () => {
       registeredCommands.push(cmd);
       return { dispose: () => {} };
     };
+
+    const mockContext: any = {
+      subscriptions: [],
+      extensionUri: vscode.Uri.file('/extension')
+    };
+
+    expect(() => activate(mockContext)).not.toThrow();
+
+    // Verify key commands registered
+    expect(registeredCommands).toContain('proofcode.verifyChange');
+    expect(registeredCommands).toContain('proofcode.openDashboard');
+    expect(registeredCommands).toContain('proofcode.initRules');
+    expect(registeredCommands).toContain('proofcode.openEvidence');
