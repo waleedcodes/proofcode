@@ -232,3 +232,81 @@ Define organizational and architectural standards for your codebase. ProofCode e
           const fullPath = resolveFile(diff.newPath);
           if (!fullPath) continue;
           const content = fs.readFileSync(fullPath, 'utf8');
+
+          if (
+            /findUnique|findById|findOne/i.test(content) &&
+            !/userId|user\.id|session\.user/i.test(content)
+          ) {
+            return {
+              rule,
+              status: 'VIOLATION',
+              detectedMessage: `Query in "${diff.newPath}" queries orders without verifying userId/ownership constraint.`,
+              file: diff.newPath,
+              line: diff.addedLines[0] || 1,
+              evidenceSnippet: `Resource: ${diff.newPath}`
+            };
+          }
+        }
+      }
+    }
+
+    // 4. Test requirement for API endpoints
+    if (textLower.includes('require tests') || textLower.includes('api endpoints require tests')) {
+      for (const diff of fileDiffs) {
+        if (
+          (diff.newPath.includes('/api/') || diff.newPath.endsWith('route.ts')) &&
+          !graph.isTestFile(diff.newPath)
+        ) {
+          const baseName = path.basename(diff.newPath, path.extname(diff.newPath));
+          const hasTest = [
+            `${diff.newPath.replace(/\.(ts|js)$/, '.test.$1')}`,
+            `${diff.newPath.replace(/\.(ts|js)$/, '.spec.$1')}`,
+            path.join(path.dirname(diff.newPath), '__tests__', `${baseName}.test.ts`)
+          ].some((p) => Boolean(resolveFile(p)));
+
+          if (!hasTest) {
+            return {
+              rule,
+              status: 'WARNING',
+              detectedMessage: `Modified API endpoint "${diff.newPath}" has no co-located or associated test file.`,
+              file: diff.newPath,
+              line: diff.addedLines[0] || 1,
+              evidenceSnippet: `Missing test for: ${diff.newPath}`
+            };
+          }
+        }
+      }
+    }
+
+    // 5. Payment idempotency
+    if (textLower.includes('idempotent') || textLower.includes('payment')) {
+      for (const diff of fileDiffs) {
+        if (diff.newPath.includes('payment') || diff.newPath.includes('checkout')) {
+          const fullPath = resolveFile(diff.newPath);
+          if (!fullPath) continue;
+          const content = fs.readFileSync(fullPath, 'utf8');
+
+          if (
+            /post|charge|pay/i.test(content) &&
+            !/idempotency|idempotent|idempotency-key/i.test(content)
+          ) {
+            return {
+              rule,
+              status: 'WARNING',
+              detectedMessage: `Payment processing file "${diff.newPath}" does not specify an idempotency key or idempotency check.`,
+              file: diff.newPath,
+              line: diff.addedLines[0] || 1,
+              evidenceSnippet: `Payment handler: ${diff.newPath}`
+            };
+          }
+        }
+      }
+    }
+
+    // Passed
+    return {
+      rule,
+      status: 'PASS'
+    };
+  }
+}
