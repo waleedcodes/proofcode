@@ -277,3 +277,97 @@ export class ProjectGraph {
     sym: SymbolInfo,
     defFile: string,
     allTestFiles: string[]
+  ): AffectedCaller[] {
+    const callers: AffectedCaller[] = [];
+    const directDependents = this.getDependents(defFile);
+
+    // Also include same file callers
+    const defAnalysis = this.fileAnalyses.get(defFile);
+    if (defAnalysis) {
+      for (const otherSym of defAnalysis.symbols) {
+        if (otherSym.name !== sym.name && otherSym.calls.includes(sym.name)) {
+          const hasTest = this.hasTestCoverage(defFile, otherSym.name, allTestFiles);
+          callers.push({
+            callerName: otherSym.name,
+            filePath: defFile,
+            line: otherSym.startLine,
+            hasTest,
+            testFilePath: hasTest ? this.findMatchingTestFile(defFile, allTestFiles) : undefined
+          });
+        }
+      }
+    }
+
+    for (const depFile of directDependents) {
+      const depAnalysis = this.fileAnalyses.get(depFile);
+      if (!depAnalysis) continue;
+
+      // Check if depFile imports sym
+      const importsSymbol = depAnalysis.imports.some(
+        (imp) =>
+          imp.resolvedPath === defFile &&
+          (imp.specifiers.some((s) => s.name === sym.name || s.propertyName === sym.name) ||
+            imp.specifiers.some((s) => s.isNamespace || s.isDefault))
+      );
+
+      if (!importsSymbol) continue;
+
+      // Check which symbols in depFile call sym.name
+      for (const callerSym of depAnalysis.symbols) {
+        if (
+          callerSym.calls.includes(sym.name) ||
+          callerSym.calls.some((c) => c.endsWith(`.${sym.name}`))
+        ) {
+          const hasTest = this.isTestFile(depFile) || this.hasTestCoverage(depFile, callerSym.name, allTestFiles);
+          callers.push({
+            callerName: callerSym.name,
+            filePath: depFile,
+            line: callerSym.startLine,
+            hasTest,
+            testFilePath: hasTest ? (this.isTestFile(depFile) ? depFile : this.findMatchingTestFile(depFile, allTestFiles)) : undefined
+          });
+        }
+      }
+    }
+
+    return callers;
+  }
+
+  private getTransitiveDependents(file: string, visited = new Set<string>()): Set<string> {
+    if (visited.has(file)) return new Set();
+    visited.add(file);
+
+    const result = new Set<string>();
+    const direct = this.getDependents(file);
+
+    for (const d of direct) {
+      result.add(d);
+      const sub = this.getTransitiveDependents(d, visited);
+      for (const s of sub) {
+        result.add(s);
+      }
+    }
+
+    return result;
+  }
+
+  private hasTestCoverage(sourceFile: string, _symbolName: string, allTestFiles: string[]): boolean {
+    const base = path.basename(sourceFile, path.extname(sourceFile));
+    for (const testFile of allTestFiles) {
+      if (testFile.includes(base)) {
+        return true;
+      }
+      // Check if testFile imports sourceFile
+      const deps = this.fileDependencies.get(testFile);
+      if (deps && deps.has(sourceFile)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private findMatchingTestFile(sourceFile: string, allTestFiles: string[]): string | undefined {
+    const base = path.basename(sourceFile, path.extname(sourceFile));
+    return allTestFiles.find((t) => t.includes(base));
+  }
+}
