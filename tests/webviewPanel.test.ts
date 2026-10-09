@@ -81,3 +81,31 @@ describe('ProofCodeWebviewPanel', () => {
 
     const mockPanel: any = {
       webview: mockWebview,
+      onDidDispose: () => ({ dispose: () => {} }),
+      reveal: () => {},
+      dispose: () => {}
+    };
+
+    (vscode.window.createWebviewPanel as any) = () => mockPanel;
+
+    ProofCodeWebviewPanel.createOrShow(
+      vscode.Uri.file('/ext'),
+      mockReport,
+      async () => {},
+      async () => {}
+    );
+
+    const html = mockWebview.html;
+    expect(html).toContain('ProofCode Change Verification');
+    expect(html).toContain('id="impact-search"');
+    expect(html).toContain('All Symbols');
+    expect(html).toContain('⚠️ Untested Callers');
+    expect(html).toContain('getUser');
+    expect(html).toContain('Dashboard');
+    expect(html).toContain('AdminPanel');
+    expect(html).toContain('✓ Test Covered');
+    expect(html).toContain('⚠️ Untested Caller');
+    expect(html).toContain('/api/auth/session');
+    expect(html).toContain('💥 What Could Break');
+  });
+});
