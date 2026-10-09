@@ -44,3 +44,57 @@ const openaiKey = "sk-1234567890abcdef1234567890abcdef";
 export function runScript(cmd: string) {
   return eval(cmd);
 }
+`;
+    const findings = RiskEngine.analyzeFile('/src/exec.ts', code);
+    const evalRisk = findings.find((f) => f.ruleId === 'PC-SEC-004');
+    expect(evalRisk).toBeDefined();
+    expect(evalRisk?.severity).toBe('HIGH');
+  });
+
+  it('should detect SSRF / unvalidated external requests', () => {
+    const code = `
+export async function proxy(req: any) {
+  return fetch(req.body.targetUrl);
+}
+`;
+    const findings = RiskEngine.analyzeFile('/src/proxy.ts', code);
+    const ssrfRisk = findings.find((f) => f.ruleId === 'PC-SEC-005');
+    expect(ssrfRisk).toBeDefined();
+    expect(ssrfRisk?.severity).toBe('MEDIUM');
+  });
+
+  it('should detect missing authorization in API routes accessing DB', () => {
+    const code = `
+export async function GET(req: Request) {
+  const orders = await db.order.findMany();
+  return Response.json(orders);
+}
+`;
+    const findings = RiskEngine.analyzeFile('/app/api/orders/route.ts', code);
+    const authRisk = findings.find((f) => f.ruleId === 'PC-AUTH-001');
+    expect(authRisk).toBeDefined();
+    expect(authRisk?.severity).toBe('HIGH');
+    expect(authRisk?.title).toContain('Missing Authorization Check');
+  });
+
+  it('should NOT flag API routes that check authentication', () => {
+    const code = `
+import { auth } from '@/auth';
+
+export async function GET(req: Request) {
+  const session = await auth();
+  if (!session) return new Response('Unauthorized', { status: 401 });
+  const orders = await db.order.findMany({ where: { userId: session.user.id } });
+  return Response.json(orders);
+}
+`;
+    const findings = RiskEngine.analyzeFile('/app/api/orders/route.ts', code);
+    const authRisk = findings.find((f) => f.ruleId === 'PC-AUTH-001');
+    expect(authRisk).toBeUndefined();
+  });
+
+  it('should detect unhandled null database results', () => {
+    const code = `
+export async function getProfile(id: string) {
+  const user = await db.user.findUnique({ where: { id } });
+  return user.email;
