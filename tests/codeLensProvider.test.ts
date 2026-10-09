@@ -64,3 +64,25 @@ describe('ProofCodeCodeLensProvider', () => {
           snippet: 'const user = db.user()',
           evidenceTrace: [],
           recommendation: 'Fix it'
+        }
+      ]
+    };
+
+    provider.setReport(mockReport as VerificationReport);
+
+    const doc: any = {
+      fileName: '/workspace/src/auth.ts',
+      lineCount: 5,
+      lineAt: (i: number) => {
+        if (i === 1) return { text: 'export function getUser() {' };
+        return { text: '}' };
+      }
+    };
+
+    const lenses = provider.provideCodeLenses(doc, {} as any);
+    expect(lenses.length).toBe(1);
+    expect(lenses[0].command?.title).toContain('2 callers (1 untested)');
+    expect(lenses[0].command?.title).toContain('1 risk');
+    expect(lenses[0].command?.command).toBe('proofcode.openDashboard');
+  });
+});
