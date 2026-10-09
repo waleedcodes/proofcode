@@ -227,3 +227,80 @@ export function activate(context: vscode.ExtensionContext): void {
     const root = getWorkspaceRoot();
     if (!root) return;
 
+    const rulesEngine = new ProjectRulesEngine(root);
+    const createdPath = await rulesEngine.initDefaultRulesFile();
+    const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(createdPath));
+    await vscode.window.showTextDocument(doc);
+    vscode.window.showInformationMessage(`ProofCode: Initialized ${createdPath}`);
+  });
+
+  const openEvidenceCmd = vscode.commands.registerCommand(
+    'proofcode.openEvidence',
+    async (filePath: string, line: number) => {
+      try {
+        const root = getWorkspaceRoot() || '';
+        const targetPath = path.isAbsolute(filePath) ? filePath : path.resolve(root, filePath);
+        const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(targetPath));
+        const editor = await vscode.window.showTextDocument(doc);
+        const position = new vscode.Position(Math.max(0, line - 1), 0);
+        editor.selection = new vscode.Selection(position, position);
+        editor.revealRange(
+          new vscode.Range(position, position),
+          vscode.TextEditorRevealType.InCenter
+        );
+      } catch (err: unknown) {
+        vscode.window.showErrorMessage(`Could not open file: ${(err as Error).message}`);
+      }
+    }
+  );
+
+  const exportReportCmd = vscode.commands.registerCommand('proofcode.exportReport', async () => {
+    const root = getWorkspaceRoot();
+    if (!root || !latestReport) {
+      vscode.window.showWarningMessage('No report available to export. Run verification first.');
+      return;
+    }
+
+    const md = ReportFormatter.toMarkdown(latestReport);
+    const exportPath = path.join(root, '.proofcode', 'report.md');
+    const dir = path.dirname(exportPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    fs.writeFileSync(exportPath, md, 'utf8');
+    const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(exportPath));
+    await vscode.window.showTextDocument(doc);
+    vscode.window.showInformationMessage(`ProofCode: Verification report exported to ${exportPath}`);
+  });
+
+  // Auto-verify on save if configured
+  const onSaveDisposable = vscode.workspace.onDidSaveTextDocument(async (doc) => {
+    if (doc.fileName.includes('.git') || doc.fileName.includes('node_modules')) return;
+    const config = vscode.workspace.getConfiguration('proofcode');
+    if (config.get<boolean>('autoVerifyOnSave', true)) {
+      await runVerification(true);
+    }
+  });
+
+  context.subscriptions.push(
+    verifyCmd,
+    openDashboardCmd,
+    initRulesCmd,
+    openEvidenceCmd,
+    exportReportCmd,
+    onSaveDisposable
+  );
+
+  // Initial silent run
+  runVerification(true).catch(() => {});
+}
+
+export function deactivate(): void {
+  if (statusBarItem) {
+    statusBarItem.dispose();
+  }
+  if (diagnosticCollection) {
+    diagnosticCollection.dispose();
+  }
+}
