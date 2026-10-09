@@ -22,3 +22,12 @@ describe('Extension Lifecycle', () => {
     expect(registeredCommands).toContain('proofcode.openDashboard');
     expect(registeredCommands).toContain('proofcode.initRules');
     expect(registeredCommands).toContain('proofcode.openEvidence');
+    expect(registeredCommands).toContain('proofcode.exportReport');
+
+    // Verify subscriptions registered
+    expect(mockContext.subscriptions.length).toBeGreaterThan(0);
+
+    // Verify deactivate does not throw
+    expect(() => deactivate()).not.toThrow();
+  });
+});
