@@ -48,3 +48,20 @@ describe('ProofCodeTreeDataProvider', () => {
         build: { name: 'Build', status: 'PASS' }
       }
     };
+
+    provider.setReport(mockReport);
+    const roots = await provider.getChildren();
+    expect(roots).toHaveLength(6);
+    expect(roots[0].label).toContain('Verification Score: 85%');
+    expect(roots[1].label).toContain('Changed Files (3)');
+    expect(roots[2].label).toContain('Impact');
+    expect(roots[3].label).toContain('Risks & Evidence (0)');
+    expect(roots[4].label).toContain('Project Rules');
+    expect(roots[5].label).toContain('Checks & Tests');
+
+    // Get children of Changed Files
+    const fileChildren = await provider.getChildren(roots[1]);
+    expect(fileChildren).toHaveLength(1);
+    expect(fileChildren[0].label).toBe('app.ts');
+  });
+});
