@@ -105,3 +105,125 @@ export function activate(context: vscode.ExtensionContext): void {
             const colIdx = Math.max(0, (risk.column || 1) - 1);
             const range = new vscode.Range(lineIdx, colIdx, lineIdx, colIdx + 40);
             const severity =
+              risk.severity === 'HIGH'
+                ? vscode.DiagnosticSeverity.Error
+                : risk.severity === 'MEDIUM'
+                ? vscode.DiagnosticSeverity.Warning
+                : vscode.DiagnosticSeverity.Information;
+
+            const diag = new vscode.Diagnostic(
+              range,
+              `[${risk.ruleId}] ${risk.title}: ${risk.description}`,
+              severity
+            );
+            diag.source = 'ProofCode';
+            diag.code = risk.ruleId;
+
+            const list = fileDiagnosticsMap.get(risk.file) || [];
+            list.push(diag);
+            fileDiagnosticsMap.set(risk.file, list);
+          }
+
+          for (const rule of report.rules) {
+            if (rule.status === 'VIOLATION' && rule.file) {
+              const lineIdx = Math.max(0, (rule.line || 1) - 1);
+              const range = new vscode.Range(lineIdx, 0, lineIdx, 40);
+              const diag = new vscode.Diagnostic(
+                range,
+                `[${rule.rule.id}] Rule Violation: "${rule.rule.title}" - ${rule.detectedMessage || ''}`,
+                vscode.DiagnosticSeverity.Error
+              );
+              diag.source = 'ProofCode';
+              diag.code = rule.rule.id;
+
+              const list = fileDiagnosticsMap.get(rule.file) || [];
+              list.push(diag);
+              fileDiagnosticsMap.set(rule.file, list);
+            }
+          }
+
+          for (const [filePath, diags] of fileDiagnosticsMap.entries()) {
+            const fullPath = path.isAbsolute(filePath) ? filePath : path.resolve(root, filePath);
+            diagnosticCollection.set(vscode.Uri.file(fullPath), diags);
+          }
+
+          // Update CodeLens annotations
+          codeLensProvider.setReport(report);
+
+          // Update Status Bar
+          const score = report.score.total;
+          const risksCount = report.risks.length;
+          const icon =
+            report.verdict === 'READY_TO_SHIP'
+              ? '$(pass)'
+              : report.verdict === 'NEEDS_REVIEW'
+              ? '$(warning)'
+              : '$(error)';
+
+          statusBarItem.text = `${icon} ProofCode: ${score}% (${risksCount} risks)`;
+          statusBarItem.tooltip = `Verdict: ${report.verdict} | ${report.summary.filesChanged} files changed, ${report.summary.symbolsAffected} symbols affected.`;
+
+          // If webview is open, refresh it
+          if (ProofCodeWebviewPanel.currentPanel) {
+            ProofCodeWebviewPanel.currentPanel.setReport(report);
+          }
+
+          if (!quiet) {
+            if (report.verdict === 'READY_TO_SHIP') {
+              vscode.window.showInformationMessage(
+                `ProofCode: Verification Passed (${score}%). Ready to ship!`
+              );
+            } else if (report.verdict === 'NEEDS_REVIEW') {
+              vscode.window.showWarningMessage(
+                `ProofCode: Score ${score}%. ${report.summary.mediumRiskCount} warning(s) need review.`
+              );
+            } else {
+              vscode.window.showErrorMessage(
+                `ProofCode: BLOCKED (${score}%). ${report.summary.highRiskCount} high risk(s) or rule violations detected.`
+              );
+            }
+          }
+
+          return report;
+        } catch (err: unknown) {
+          vscode.window.showErrorMessage(
+            `ProofCode Verification Error: ${(err as Error).message}`
+          );
+          return null;
+        }
+      }
+    );
+  };
+
+  // Commands
+  const verifyCmd = vscode.commands.registerCommand('proofcode.verifyChange', async () => {
+    await runVerification(false);
+  });
+
+  const openDashboardCmd = vscode.commands.registerCommand('proofcode.openDashboard', async () => {
+    if (!latestReport) {
+      await runVerification(true);
+    }
+
+    const root = getWorkspaceRoot();
+    ProofCodeWebviewPanel.createOrShow(
+      context.extensionUri,
+      latestReport,
+      async () => {
+        await runVerification(false);
+      },
+      async () => {
+        if (root) {
+          const rulesEngine = new ProjectRulesEngine(root);
+          const createdPath = await rulesEngine.initDefaultRulesFile();
+          const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(createdPath));
+          await vscode.window.showTextDocument(doc);
+        }
+      }
+    );
+  });
+
+  const initRulesCmd = vscode.commands.registerCommand('proofcode.initRules', async () => {
+    const root = getWorkspaceRoot();
+    if (!root) return;
+
