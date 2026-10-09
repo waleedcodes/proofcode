@@ -121,3 +121,45 @@ export class TestRunner {
     return {
       name: 'ESLint',
       status: 'SKIPPED',
+      message: 'No lint script or ESLint configuration detected.'
+    };
+  }
+
+  public async runUnitTests(workspaceRoot: string): Promise<CheckResult> {
+    const scripts = this.getPackageScripts(workspaceRoot);
+    const pm = this.detectPackageManager(workspaceRoot);
+
+    if (scripts['test']) {
+      // If the default npm test is "echo \"Error: no test specified\" && exit 1", treat as skipped
+      if (scripts['test'].includes('no test specified')) {
+        return {
+          name: 'Unit Tests',
+          status: 'SKIPPED',
+          message: 'No tests configured in package.json.'
+        };
+      }
+      return this.executeCommand(`${pm} test`, workspaceRoot, 'Unit Tests');
+    }
+
+    return {
+      name: 'Unit Tests',
+      status: 'SKIPPED',
+      message: 'No test script found in package.json.'
+    };
+  }
+
+  public async runBuild(workspaceRoot: string): Promise<CheckResult> {
+    const scripts = this.getPackageScripts(workspaceRoot);
+    const pm = this.detectPackageManager(workspaceRoot);
+
+    if (scripts['build']) {
+      return this.executeCommand(`${pm} run build`, workspaceRoot, 'Build Check');
+    }
+
+    return {
+      name: 'Build Check',
+      status: 'SKIPPED',
+      message: 'No build script found in package.json.'
+    };
+  }
+}
