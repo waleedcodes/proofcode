@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main, working]
+  pull_request:
+    branches: [main, working]
+
+jobs:
+  verify:
+    name: Typecheck, Lint, Test & Package
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: TypeScript Typecheck
+        run: npm run typecheck
+
+      - name: ESLint Check
+        run: npm run lint
+
+      - name: Run Test Suite
+        run: npm test
+
+      - name: Build Extension & CLI Bundles
+        run: npm run build
+
+      - name: Verify CLI Runner & Killer Workflow Demo
+        run: |
+          node dist/cli.js --help
+          npm run demo
+
+      - name: Package VS Code Extension (.vsix)
+        run: npx --yes @vscode/vsce package --no-dependencies
