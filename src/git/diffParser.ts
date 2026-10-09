@@ -114,3 +114,42 @@ export class DiffParser {
       files.push(currentFile);
     }
 
+    // Compute consolidated modifiedLineRanges per file
+    for (const file of files) {
+      file.modifiedLineRanges = this.computeLineRanges(file.addedLines);
+    }
+
+    return {
+      repoRoot,
+      files,
+      totalFilesChanged: files.length,
+      totalInsertions,
+      totalDeletions
+    };
+  }
+
+  private static computeLineRanges(lineNumbers: number[]): ChangedLineRange[] {
+    if (lineNumbers.length === 0) {
+      return [];
+    }
+
+    const sorted = Array.from(new Set(lineNumbers)).sort((a, b) => a - b);
+    const ranges: ChangedLineRange[] = [];
+    let start = sorted[0];
+    let end = sorted[0];
+
+    for (let i = 1; i < sorted.length; i++) {
+      const current = sorted[i];
+      if (current === end + 1) {
+        end = current;
+      } else {
+        ranges.push({ start, end });
+        start = current;
+        end = current;
+      }
+    }
+    ranges.push({ start, end });
+
+    return ranges;
+  }
+}
