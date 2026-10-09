@@ -145,3 +145,52 @@ export class ReportFormatter {
   public static toTerminal(report: VerificationReport): string {
     const lines: string[] = [];
     lines.push('====================================================');
+    lines.push('             PROOFCODE CHANGE VERIFICATION          ');
+    lines.push('====================================================');
+    lines.push(`Verdict:       ${report.verdict}`);
+    lines.push(`Score:         ${report.score.total}%`);
+    lines.push(`Files Changed: ${report.summary.filesChanged}`);
+    lines.push(`Functions:     ${report.summary.symbolsAffected} affected`);
+    lines.push(`API Routes:    ${report.summary.apiRoutesAffected} affected`);
+    lines.push(
+      `Risks:         🔴 ${report.summary.highRiskCount} High | 🟠 ${report.summary.mediumRiskCount} Med | 🟢 ${report.summary.lowRiskCount} Low`
+    );
+    lines.push('----------------------------------------------------');
+
+    if (report.breakageRisks && report.breakageRisks.length > 0) {
+      lines.push('WHAT COULD THIS CHANGE BREAK?');
+      for (const b of report.breakageRisks) {
+        lines.push(`- [${b.severity}] ${b.area}: ${b.trigger}`);
+        lines.push(`  Impact: ${b.detail}`);
+        if (b.affectedCallersOrRoutes.length > 0) {
+          lines.push(`  Dependents: ${b.affectedCallersOrRoutes.join(', ')}`);
+        }
+      }
+      lines.push('----------------------------------------------------');
+    }
+
+    if (report.risks.length > 0) {
+      lines.push('CRITICAL FINDINGS:');
+      for (const risk of report.risks) {
+        lines.push(`[${risk.severity}] ${risk.title} at ${risk.file}:${risk.line}`);
+        lines.push(`  -> ${risk.description}`);
+      }
+      lines.push('----------------------------------------------------');
+    }
+
+    const violations = report.rules.filter((r) => r.status === 'VIOLATION');
+    if (violations.length > 0) {
+      lines.push('RULE VIOLATIONS:');
+      for (const v of violations) {
+        lines.push(`- ${v.rule.title}: ${v.detectedMessage} (${v.file}:${v.line})`);
+      }
+      lines.push('----------------------------------------------------');
+    }
+
+    return lines.join('\n');
+  }
+
+  public static toJson(report: VerificationReport): string {
+    return JSON.stringify(report, null, 2);
+  }
+}
