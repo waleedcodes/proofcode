@@ -12,3 +12,19 @@ describe('ProjectRulesEngine', () => {
 
   it('should detect passwordHash leakage in response objects', async () => {
     const engine = new ProjectRulesEngine(process.cwd());
+    const graph = new ProjectGraph(process.cwd());
+
+    const fakeDiff = [
+      {
+        oldPath: 'src/api/user.ts',
+        newPath: 'src/api/user.ts',
+        isNew: false,
+        isDeleted: false,
+        isRenamed: false,
+        hunks: [],
+        addedLines: [1],
+        deletedLines: [],
+        modifiedLineRanges: [{ start: 1, end: 1 }]
+      }
+    ];
+
