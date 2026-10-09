@@ -28,3 +28,39 @@ describe('ProofCodeCodeLensProvider', () => {
         testsAdded: 0,
         testsAffected: 0,
         highRiskCount: 1,
+        mediumRiskCount: 0,
+        lowRiskCount: 0
+      },
+      impact: {
+        changedFiles: ['/workspace/src/auth.ts'],
+        changedSymbols: [
+          {
+            symbolName: 'getUser',
+            kind: 'function',
+            filePath: '/workspace/src/auth.ts',
+            callers: [
+              { callerName: 'ProfilePage', filePath: '/src/Profile.tsx', line: 10, hasTest: false },
+              { callerName: 'Dashboard', filePath: '/src/Dashboard.tsx', line: 12, hasTest: true }
+            ],
+            isApiRoute: false
+          }
+        ],
+        affectedFiles: ['/src/Profile.tsx', '/src/Dashboard.tsx'],
+        affectedCallers: [],
+        affectedRoutes: [],
+        totalCallersCount: 2,
+        untestedCallersCount: 1
+      },
+      risks: [
+        {
+          id: 'risk-1',
+          ruleId: 'PC-AUTH-001',
+          category: 'authorization',
+          title: 'Missing Auth',
+          severity: 'HIGH',
+          description: 'No auth',
+          file: '/workspace/src/auth.ts',
+          line: 3,
+          snippet: 'const user = db.user()',
+          evidenceTrace: [],
+          recommendation: 'Fix it'
