@@ -52,3 +52,65 @@ export class DiffParser {
           modifiedLineRanges: []
         };
         continue;
+      }
+
+      if (!currentFile) {
+        continue;
+      }
+
+      if (line.startsWith('new file mode ')) {
+        currentFile.isNew = true;
+      } else if (line.startsWith('deleted file mode ')) {
+        currentFile.isDeleted = true;
+      } else if (line.startsWith('similarity index ')) {
+        currentFile.isRenamed = true;
+      } else if (line.startsWith('rename from ')) {
+        currentFile.oldPath = line.substring('rename from '.length).trim();
+      } else if (line.startsWith('rename to ')) {
+        currentFile.newPath = line.substring('rename to '.length).trim();
+      } else if (line.startsWith('@@ ')) {
+        // Hunk header: @@ -oldStart,oldLines +newStart,newLines @@ [optional context]
+        if (currentHunk) {
+          currentFile.hunks.push(currentHunk);
+        }
+
+        const hunkMatch = line.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$/);
+        if (hunkMatch) {
+          const oldStart = parseInt(hunkMatch[1], 10);
+          const oldLines = hunkMatch[2] ? parseInt(hunkMatch[2], 10) : 1;
+          const newStart = parseInt(hunkMatch[3], 10);
+          const newLines = hunkMatch[4] ? parseInt(hunkMatch[4], 10) : 1;
+
+          currentHunk = {
+            oldStart,
+            oldLines,
+            newStart,
+            newLines,
+            header: line,
+            lines: []
+          };
+          currentNewLine = newStart;
+        }
+      } else if (currentHunk) {
+        currentHunk.lines.push(line);
+
+        if (line.startsWith('+') && !line.startsWith('+++')) {
+          currentFile.addedLines.push(currentNewLine);
+          totalInsertions++;
+          currentNewLine++;
+        } else if (line.startsWith('-') && !line.startsWith('---')) {
+          currentFile.deletedLines.push(currentHunk.newStart);
+          totalDeletions++;
+        } else if (line.startsWith(' ')) {
+          currentNewLine++;
+        }
+      }
+    }
+
+    if (currentHunk && currentFile) {
+      currentFile.hunks.push(currentHunk);
+    }
+    if (currentFile) {
+      files.push(currentFile);
+    }
+
