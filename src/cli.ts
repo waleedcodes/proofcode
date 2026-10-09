@@ -33,3 +33,44 @@ Options:
   --live       Run full live test and build checks (npm test, tsc, etc.)
   --json       Output report as structured JSON
   --markdown   Output report as formatted GitHub Markdown
+  --help, -h   Show this help message
+`);
+    process.exit(0);
+  }
+
+  if (command === 'init') {
+    const rulesEngine = new ProjectRulesEngine(cwd);
+    const created = await rulesEngine.initDefaultRulesFile();
+    console.log(`Initialized ProofCode rules at: ${created}`);
+    process.exit(0);
+  }
+
+  if (command === 'rules') {
+    const rulesEngine = new ProjectRulesEngine(cwd);
+    const rules = rulesEngine.parseRules();
+    console.log(`\nConfigured Rules (${rules.length}):`);
+    rules.forEach((r, idx) => {
+      console.log(`  ${idx + 1}. [${r.severity}] ${r.title}: ${r.description}`);
+    });
+    console.log('');
+    process.exit(0);
+  }
+
+  // Default: Verify
+  try {
+    const engine = new ProofCodeEngine(cwd);
+    const report = await engine.verify({
+      staged: isStaged,
+      runLiveTests: isLive
+    });
+
+    if (isJson) {
+      console.log(ReportFormatter.toJson(report));
+    } else if (isMarkdown) {
+      console.log(ReportFormatter.toMarkdown(report));
+    } else {
+      console.log(ReportFormatter.toTerminal(report));
+    }
+
+    // Write artifact report if .proofcode dir exists
+    const proofcodeDir = path.join(cwd, '.proofcode');
