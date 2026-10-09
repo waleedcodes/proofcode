@@ -57,3 +57,70 @@
       ]
     },
     "commands": [
+      {
+        "command": "proofcode.verifyChange",
+        "title": "Verify Current Changes",
+        "category": "ProofCode",
+        "icon": "$(shield)"
+      },
+      {
+        "command": "proofcode.openDashboard",
+        "title": "Open Verification Dashboard",
+        "category": "ProofCode",
+        "icon": "$(dashboard)"
+      },
+      {
+        "command": "proofcode.initRules",
+        "title": "Initialize .proofcode/rules.md",
+        "category": "ProofCode",
+        "icon": "$(file-code)"
+      },
+      {
+        "command": "proofcode.openEvidence",
+        "title": "Open Evidence Location",
+        "category": "ProofCode"
+      },
+      {
+        "command": "proofcode.exportReport",
+        "title": "Export Verification Report",
+        "category": "ProofCode",
+        "icon": "$(desktop-download)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "proofcode.verifyChange",
+          "when": "view == proofcode.views.overview",
+          "group": "navigation@1"
+        },
+        {
+          "command": "proofcode.openDashboard",
+          "when": "view == proofcode.views.overview",
+          "group": "navigation@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "proofcode.verifyChange"
+        },
+        {
+          "command": "proofcode.openDashboard"
+        },
+        {
+          "command": "proofcode.initRules"
+        },
+        {
+          "command": "proofcode.exportReport"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "ProofCode",
+      "properties": {
+        "proofcode.autoVerifyOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically update impact and risk analysis when files are saved."
+        },
+        "proofcode.runTestsOnVerify": {
