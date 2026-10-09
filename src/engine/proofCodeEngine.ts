@@ -1,3 +1,4 @@
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { GitService } from '../git/gitService';
 import { ProjectGraph } from '../graph/projectGraph';
@@ -55,7 +56,7 @@ export class ProofCodeEngine {
       targetWorkspace !== path.resolve(repoRoot) &&
       targetWorkspace.startsWith(path.resolve(repoRoot));
 
-    const filesToVerify = isSubfolder
+    let filesToVerify = isSubfolder
       ? diffResult.files.filter((f) => {
           const full = path.resolve(repoRoot, f.newPath);
           return full.startsWith(targetWorkspace);
@@ -63,6 +64,31 @@ export class ProofCodeEngine {
       : diffResult.files;
 
     const activeRoot = isSubfolder ? targetWorkspace : repoRoot;
+
+    // If verifying a specific subfolder workspace (e.g. demo fixture or sub-package)
+    // and there are no active git diffs, synthesize diff files covering all source files
+    if (filesToVerify.length === 0 && isSubfolder) {
+      const graphHelper = new ProjectGraph(activeRoot);
+      const allFiles = graphHelper.findSourceFiles(activeRoot);
+      filesToVerify = allFiles.map((fp: string) => {
+        const content = fs.existsSync(fp) ? fs.readFileSync(fp, 'utf8') : '';
+        const lineCount = content.split('\n').length;
+        const lines: number[] = [];
+        for (let i = 1; i <= lineCount; i++) lines.push(i);
+        return {
+          oldPath: path.relative(repoRoot, fp),
+          newPath: path.relative(repoRoot, fp),
+          isNew: false,
+          isDeleted: false,
+          isRenamed: false,
+          status: 'modified' as const,
+          addedLines: lines,
+          deletedLines: [],
+          hunks: [],
+          modifiedLineRanges: [{ start: 1, end: lineCount }]
+        };
+      });
+    }
 
     // 2. Project Graph & Dependency Mapping
     const graph = new ProjectGraph(activeRoot);

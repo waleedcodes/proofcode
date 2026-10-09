@@ -132,7 +132,7 @@ export class ProjectGraph {
     return null;
   }
 
-  private findSourceFiles(dir: string, fileList: string[] = []): string[] {
+  public findSourceFiles(dir: string, fileList: string[] = []): string[] {
     if (!fs.existsSync(dir)) return fileList;
 
     const ignoredDirs = new Set([
