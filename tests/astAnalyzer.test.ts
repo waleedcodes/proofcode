@@ -46,3 +46,19 @@ export async function POST(request: Request) {
   });
 
   it('should find symbols intersecting with modified lines', () => {
+    const code = `
+export function first() {
+  return 1;
+}
+
+export function second() {
+  return 2;
+}
+`;
+    const analysis = AstAnalyzer.analyzeFile('/test/funcs.ts', code);
+    // line 2 is in 'first'
+    const touched = AstAnalyzer.findSymbolsAtLines(analysis.symbols, [3]);
+    expect(touched).toHaveLength(1);
+    expect(touched[0].name).toBe('first');
+  });
+});
