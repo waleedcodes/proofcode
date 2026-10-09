@@ -454,3 +454,94 @@ export class RiskEngine {
               ruleId: 'PC-AUTH-001',
               category: 'authorization',
               title: `Missing Authorization Check in API Route (${handlerName})`,
+              severity: 'HIGH',
+              description: `API route handler '${handlerName}' accesses database resources without verifying user authentication or permissions.`,
+              file: filePath,
+              line,
+              snippet: getSnippet(line),
+              evidenceTrace: trace,
+              recommendation:
+                'Verify user identity and ownership before querying or modifying sensitive records (e.g. const session = await auth()).'
+            });
+          }
+        }
+      }
+
+      ts.forEachChild(node, visit);
+    };
+
+    ts.forEachChild(sourceFile, visit);
+    return findings;
+  }
+
+  private static checkUnhandledNullDbResult(
+    node: ts.VariableDeclaration,
+    sourceFile: ts.SourceFile,
+    filePath: string,
+    isLineChanged: (line: number) => boolean,
+    getSnippet: (line: number) => string,
+    findings: RiskFinding[]
+  ): void {
+    if (!ts.isIdentifier(node.name) || !node.initializer) return;
+    const varName = node.name.text;
+    const initText = node.initializer.getText(sourceFile);
+
+    const isSingleEntityQuery =
+      /\b(db|prisma|repository|repo|order|user|account)(\.[a-zA-Z0-9_$]+)*\.(findUnique|findOne|findById)\b/i.test(
+        initText
+      );
+
+    if (!isSingleEntityQuery) return;
+
+    let scopeNode: ts.Node | undefined = node.parent;
+    while (scopeNode && !ts.isBlock(scopeNode) && !ts.isSourceFile(scopeNode)) {
+      scopeNode = scopeNode.parent;
+    }
+    if (!scopeNode) return;
+
+    const statements = ts.isBlock(scopeNode)
+      ? scopeNode.statements
+      : (scopeNode as ts.SourceFile).statements;
+
+    const varDeclIndex = statements.findIndex((s) => s.getText(sourceFile).includes(varName));
+    if (varDeclIndex === -1) return;
+
+    let hasNullCheck = false;
+    let unsafeDereference: { line: number; text: string } | null = null;
+
+    for (let i = varDeclIndex + 1; i < statements.length; i++) {
+      const stmt = statements[i];
+
+      if (
+        ts.isIfStatement(stmt) &&
+        (new RegExp(`!\\s*${varName}\\b`).test(stmt.expression.getText(sourceFile)) ||
+          new RegExp(`${varName}\\s*(===|==)\\s*(null|undefined)`).test(
+            stmt.expression.getText(sourceFile)
+          ))
+      ) {
+        hasNullCheck = true;
+        break;
+      }
+
+      const checkNode = (n: ts.Node) => {
+        if (hasNullCheck || unsafeDereference) return;
+        if (ts.isPropertyAccessExpression(n)) {
+          if (
+            ts.isIdentifier(n.expression) &&
+            n.expression.text === varName &&
+            !n.questionDotToken
+          ) {
+            let p: ts.Node | undefined = n.parent;
+            let guarded = false;
+            while (p && p !== stmt) {
+              if (
+                ts.isBinaryExpression(p) &&
+                p.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken &&
+                p.left.getText(sourceFile).includes(varName)
+              ) {
+                guarded = true;
+                break;
+              }
+              p = p.parent;
+            }
+
