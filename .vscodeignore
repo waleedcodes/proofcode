@@ -10,3 +10,7 @@ coverage/**
 tsconfig.json
 vitest.config.ts
 esbuild.config.js
+.git/**
+.github/**
+**/*.map
+node_modules/**
