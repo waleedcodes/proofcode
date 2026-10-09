@@ -73,3 +73,29 @@ describe('ProofCodeCodeActionProvider', () => {
 
     expect(actions.length).toBeGreaterThanOrEqual(1);
     const guardAction = actions.find((a) => a.title.includes('null guard'));
+    expect(guardAction).toBeDefined();
+    expect(guardAction?.title).toContain('if (!user)');
+  });
+
+  it('should provide QuickFix for missing authorization in API route (PC-AUTH-001)', () => {
+    const provider = new ProofCodeCodeActionProvider();
+    const diag = new vscode.Diagnostic(
+      new vscode.Range(0, 0, 0, 20),
+      '[PC-AUTH-001] Missing Authorization Check in API Route (GET)',
+      vscode.DiagnosticSeverity.Error
+    );
+    diag.source = 'ProofCode';
+    diag.code = 'PC-AUTH-001';
+
+    const actions = provider.provideCodeActions(
+      mockDocument,
+      new vscode.Range(0, 0, 0, 0),
+      { diagnostics: [diag] } as any,
+      {} as any
+    );
+
+    expect(actions.length).toBe(1);
+    expect(actions[0].title).toContain('session authentication guard');
+    expect(actions[0].edit).toBeDefined();
+  });
+});
