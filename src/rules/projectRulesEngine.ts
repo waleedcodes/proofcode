@@ -107,3 +107,128 @@ Define organizational and architectural standards for your codebase. ProofCode e
       },
       {
         id: 'RULE-3',
+        title: 'Resource Ownership',
+        description: 'Users can only access their own orders or sensitive resources.',
+        severity: 'HIGH'
+      },
+      {
+        id: 'RULE-4',
+        title: 'API Test Requirement',
+        description: 'All public API endpoints require tests.',
+        severity: 'MEDIUM'
+      },
+      {
+        id: 'RULE-5',
+        title: 'Payment Idempotency',
+        description: 'Payment operations must be idempotent.',
+        severity: 'MEDIUM'
+      }
+    ];
+  }
+
+  /**
+   * Checks changes against active project rules
+   */
+  public async evaluateRules(
+    fileDiffs: FileDiff[],
+    graph: ProjectGraph
+  ): Promise<RuleResult[]> {
+    const rules = this.parseRules();
+    const results: RuleResult[] = [];
+
+    for (const rule of rules) {
+      const result = await this.evaluateSingleRule(rule, fileDiffs, graph);
+      results.push(result);
+    }
+
+    return results;
+  }
+
+  private async evaluateSingleRule(
+    rule: ProjectRule,
+    fileDiffs: FileDiff[],
+    graph: ProjectGraph
+  ): Promise<RuleResult> {
+    const textLower = `${rule.title} ${rule.description}`.toLowerCase();
+
+    const resolveFile = (relPath: string): string | null => {
+      if (path.isAbsolute(relPath) && fs.existsSync(relPath)) return relPath;
+      const direct = path.resolve(this.workspaceRoot, relPath);
+      if (fs.existsSync(direct)) return direct;
+      const cwdPath = path.resolve(relPath);
+      if (fs.existsSync(cwdPath)) return cwdPath;
+      return null;
+    };
+
+    // 1. PasswordHash protection
+    if (textLower.includes('passwordhash') || textLower.includes('never expose password')) {
+      for (const diff of fileDiffs) {
+        if (!/\.(ts|tsx|js|jsx|mjs|cjs)$/.test(diff.newPath)) continue;
+        const fullPath = resolveFile(diff.newPath);
+        if (!fullPath) continue;
+        const content = fs.readFileSync(fullPath, 'utf8');
+        const lines = content.split('\n');
+        const hasResponse = /res\.json|response\.json|return\s+\{/i.test(content);
+
+        for (const lineNum of diff.addedLines) {
+          const lineStr = lines[lineNum - 1] || '';
+          if (
+            /passwordHash|password_hash/i.test(lineStr) &&
+            (hasResponse || /res\.json|return|response\.json/i.test(lineStr))
+          ) {
+            return {
+              rule,
+              status: 'VIOLATION',
+              detectedMessage: 'Detected sensitive field "passwordHash" in response payload.',
+              file: diff.newPath,
+              line: lineNum,
+              evidenceSnippet: lineStr.trim()
+            };
+          }
+        }
+      }
+    }
+
+    // 2. Authentication in API routes
+    if (textLower.includes('every api route must authenticate') || textLower.includes('authentication')) {
+      for (const diff of fileDiffs) {
+        if (
+          diff.newPath.includes('/api/') ||
+          diff.newPath.includes('app/api') ||
+          diff.newPath.endsWith('route.ts') ||
+          diff.newPath.endsWith('route.js')
+        ) {
+          const fullPath = resolveFile(diff.newPath);
+          if (!fullPath) continue;
+          const content = fs.readFileSync(fullPath, 'utf8');
+
+          const hasAuth =
+            /\b(auth|session|getServerSession|verifyToken|jwt\.verify|req\.user|req\.session|requireAuth|authenticate)\b/i.test(
+              content
+            );
+
+          if (!hasAuth) {
+            return {
+              rule,
+              status: 'VIOLATION',
+              detectedMessage: `API route "${diff.newPath}" does not appear to contain user authentication checks.`,
+              file: diff.newPath,
+              line: diff.addedLines[0] || 1,
+              evidenceSnippet: `Route file: ${diff.newPath}`
+            };
+          }
+        }
+      }
+    }
+
+    // 3. Ownership check on orders/user resources
+    if (
+      textLower.includes('own orders') ||
+      textLower.includes('ownership') ||
+      textLower.includes('own resources')
+    ) {
+      for (const diff of fileDiffs) {
+        if (diff.newPath.includes('order') || diff.newPath.includes('orders')) {
+          const fullPath = resolveFile(diff.newPath);
+          if (!fullPath) continue;
+          const content = fs.readFileSync(fullPath, 'utf8');
