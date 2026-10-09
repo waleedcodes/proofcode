@@ -51,3 +51,21 @@ export class ProofCodeCodeLensProvider implements vscode.CodeLensProvider {
             title += ` (${untestedCount} untested)`;
           }
           if (relatedRisks.length > 0) {
+            title += ` | ⚠️ ${relatedRisks.length} risk${relatedRisks.length === 1 ? '' : 's'}`;
+          }
+
+          lenses.push(
+            new vscode.CodeLens(range, {
+              title,
+              command: 'proofcode.openDashboard',
+              tooltip: 'Click to open ProofCode Change Verification Dashboard'
+            })
+          );
+          break;
+        }
+      }
+    }
+
+    return lenses;
+  }
+}
