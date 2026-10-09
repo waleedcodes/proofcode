@@ -820,3 +820,552 @@ export class ProofCodeWebviewPanel {
     }
 
     .routes-section-card {
+      background: rgba(30, 41, 59, 0.4);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-top: 16px;
+    }
+
+    .route-item-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    }
+
+    .route-item-row:last-child {
+      border-bottom: none;
+    }
+
+    .route-badge {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(59, 130, 246, 0.2);
+      color: #60A5FA;
+      margin-right: 8px;
+    }
+
+    /* Rules Table */
+    .rules-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+
+    .rules-table th, .rules-table td {
+      padding: 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--card-border);
+    }
+
+    .rules-table th {
+      color: var(--text-muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 48px;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+
+  <header class="header">
+    <div class="brand">
+      <div class="brand-logo">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#000" stroke-width="2.5">
+          <path d="M12 2L4 5v6.09c0 5.05 3.41 9.76 8 10.91 4.59-1.15 8-5.86 8-10.91V5l-8-3z"/>
+          <path d="m9 12 2 2 4-4"/>
+        </svg>
+      </div>
+      <div>
+        <h1 class="brand-title">ProofCode</h1>
+        <div class="brand-tagline">AI writes code. ProofCode proves the change.</div>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button id="btn-verify" class="btn btn-primary">
+        ⚡ Run Verification
+      </button>
+      <button id="btn-export" class="btn btn-secondary">
+        📄 Export Report
+      </button>
+      <button id="btn-init-rules" class="btn btn-secondary">
+        📋 Edit Rules
+      </button>
+    </div>
+  </header>
+
+  <div class="top-grid">
+    <div class="card score-card">
+      <div class="metric-title">Verification Score</div>
+      <div class="gauge-container">
+        <svg class="gauge-circle" viewBox="0 0 140 140">
+          <circle class="gauge-bg" cx="70" cy="70" r="60"/>
+          <circle class="gauge-fill" cx="70" cy="70" r="60"/>
+        </svg>
+        <div class="gauge-value">${score}%</div>
+      </div>
+      <div class="verdict-badge">${verdictText}</div>
+    </div>
+
+    <div class="metrics-grid">
+      <div class="metric-box">
+        <div class="metric-title">Files Changed</div>
+        <div class="metric-number">${summary.filesChanged}</div>
+        <div class="metric-diff">+${summary.linesAdded} / -${summary.linesDeleted} lines</div>
+      </div>
+      <div class="metric-box">
+        <div class="metric-title">Functions Affected</div>
+        <div class="metric-number">${summary.symbolsAffected}</div>
+        <div class="metric-diff">${summary.apiRoutesAffected} API routes</div>
+      </div>
+      <div class="metric-box">
+        <div class="metric-title">Critical Risks</div>
+        <div class="metric-number" style="color: ${summary.highRiskCount > 0 ? 'var(--danger)' : 'var(--success)'}">
+          ${summary.highRiskCount}
+        </div>
+        <div class="metric-diff" style="color: var(--warning)">+${summary.mediumRiskCount} medium, ${summary.lowRiskCount} low</div>
+      </div>
+      <div class="metric-box">
+        <div class="metric-title">Untested Callers</div>
+        <div class="metric-number" style="color: ${(impact?.untestedCallersCount || 0) > 0 ? 'var(--warning)' : 'var(--success)'}">
+          ${impact?.untestedCallersCount ?? 0}
+        </div>
+        <div class="metric-diff">${impact?.totalCallersCount ?? 0} total callers</div>
+      </div>
+    </div>
+  </div>
+
+  <nav class="tabs">
+    <div class="tab active" data-tab="tab-risks" id="tab-btn-risks">
+      Risks & Evidence <span class="tab-badge ${summary.highRiskCount > 0 ? 'danger' : ''}">${risks.length}</span>
+    </div>
+    <div class="tab" data-tab="tab-breakage" id="tab-btn-breakage">
+      💥 What Could Break <span class="tab-badge ${breakage.some((b) => b.severity === 'HIGH') ? 'danger' : ''}">${breakage.length}</span>
+    </div>
+    <div class="tab" data-tab="tab-impact" id="tab-btn-impact">
+      Impact Analysis <span class="tab-badge">${summary.symbolsAffected}</span>
+    </div>
+    <div class="tab" data-tab="tab-rules" id="tab-btn-rules">
+      Project Rules <span class="tab-badge">${rules.length}</span>
+    </div>
+    <div class="tab" data-tab="tab-checks" id="tab-btn-checks">
+      Tests & Checks
+    </div>
+  </nav>
+
+  <!-- TAB 1: RISKS -->
+  <section class="tab-pane active" id="tab-risks">
+    ${
+      risks.length === 0
+        ? `<div class="card empty-state">
+             <h3>✅ No Static Risks Detected</h3>
+             <p style="margin-top: 8px;">No SQL injection, missing authorization, hardcoded secrets, or unhandled errors found in changed files.</p>
+           </div>`
+        : risks
+            .map(
+              (r) => `
+        <div class="risk-card ${r.severity.toLowerCase()}">
+          <div class="risk-header">
+            <div class="risk-title-wrap">
+              <span class="severity-tag ${r.severity.toLowerCase()}">${r.severity}</span>
+              <span class="risk-title">${r.title}</span>
+            </div>
+            <button class="btn btn-secondary open-evidence-btn" data-file="${r.file}" data-line="${r.line}">
+              🔍 Open Evidence (${path.basename(r.file)}:${r.line})
+            </button>
+          </div>
+          <p style="color: #CBD5E1; margin-bottom: 8px;">${r.description}</p>
+          
+          ${
+            r.evidenceTrace.length > 0
+              ? `<div class="evidence-path"><strong>Evidence Trace:</strong>\n${r.evidenceTrace
+                  .map((t, idx) => `  [Step ${idx + 1}] Line ${t.line}: ${t.description}`)
+                  .join('\n')}`
+              : ''
+          }</div>
+
+          ${
+            r.snippet
+              ? `<div class="code-preview"><code>${escapeHtml(r.snippet)}</code></div>`
+              : ''
+          }
+
+          <div class="recommendation-box">
+            <strong>Action:</strong> ${r.recommendation}
+          </div>
+        </div>
+      `
+            )
+            .join('')
+    }
+  </section>
+
+  <!-- TAB: WHAT COULD BREAK -->
+  <section class="tab-pane" id="tab-breakage">
+    ${
+      breakage.length === 0
+        ? `<div class="card empty-state">
+             <h3>✅ No Regression Breakage Risks Detected</h3>
+             <p style="margin-top: 8px;">No modified core services with untested dependents, critical route vulnerabilities, or rule breaches found.</p>
+           </div>`
+        : breakage
+            .map(
+              (b) => `
+        <div class="risk-card ${b.severity.toLowerCase()}">
+          <div class="risk-header">
+            <div class="risk-title-wrap">
+              <span class="severity-tag ${b.severity.toLowerCase()}">${b.severity}</span>
+              <span class="risk-title">${b.area}: ${b.trigger}</span>
+            </div>
+            ${
+              b.evidenceFile
+                ? `<button class="btn btn-secondary open-evidence-btn" data-file="${b.evidenceFile}" data-line="${b.evidenceLine || 1}">
+                    🔍 Open Evidence (${path.basename(b.evidenceFile)}:${b.evidenceLine || 1})
+                  </button>`
+                : ''
+            }
+          </div>
+          <p style="color: #CBD5E1; margin-bottom: 8px;"><strong>Impact:</strong> ${b.detail}</p>
+          ${
+            b.affectedCallersOrRoutes.length > 0
+              ? `<div style="margin-top: 8px; font-size: 12px; color: var(--text-muted);">
+                   <strong>Dependents at risk:</strong> ${b.affectedCallersOrRoutes
+                     .map(
+                       (c) =>
+                         `<code style="background: rgba(255,255,255,0.06); padding: 2px 6px; border-radius: 4px; margin-right: 4px; color: #93C5FD;">${c}</code>`
+                     )
+                     .join(' ')}
+                 </div>`
+              : ''
+          }
+        </div>
+      `
+            )
+            .join('')
+    }
+  </section>
+
+  <!-- TAB 2: IMPACT & VISUAL BLAST GRAPH -->
+  <section class="tab-pane" id="tab-impact">
+    ${
+      !impact || impact.changedSymbols.length === 0
+        ? `<div class="card empty-state"><h3>⚡ No exported symbols were modified.</h3></div>`
+        : `
+      <!-- Toolbar -->
+      <div class="impact-toolbar">
+        <div class="impact-search-box">
+          <input type="text" id="impact-search" class="impact-search-input" placeholder="🔍 Search functions, callers, files..." />
+        </div>
+        <div class="impact-filter-pills">
+          <button class="filter-pill active" data-filter="all">All Symbols (${impact.changedSymbols.length})</button>
+          <button class="filter-pill danger" data-filter="untested">⚠️ Untested Callers (${impact.untestedCallersCount})</button>
+          <button class="filter-pill" data-filter="routes">🌐 API Routes (${impact.affectedRoutes.length})</button>
+        </div>
+      </div>
+
+      <!-- Symbols Blast Graph -->
+      <div id="impact-symbols-container">
+        ${impact.changedSymbols
+          .map((sym) => {
+            const untestedCallers = sym.callers.filter((c) => !c.hasTest);
+            return `
+          <div class="blast-symbol-card" data-symbol="${escapeHtml(sym.symbolName.toLowerCase())}" data-file="${escapeHtml(path.basename(sym.filePath).toLowerCase())}" data-untested="${untestedCallers.length}">
+            <div class="blast-header">
+              <div class="blast-symbol-info">
+                <div class="symbol-glyph">ƒ</div>
+                <div>
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <span class="symbol-name-text">${escapeHtml(sym.symbolName)}</span>
+                    <span class="symbol-kind-tag">${sym.kind}</span>
+                    ${sym.isApiRoute ? '<span class="tag-tested" style="font-size: 9px;">API ROUTE</span>' : ''}
+                  </div>
+                  <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                    in <code>${escapeHtml(path.relative(report?.repoRoot || '', sym.filePath))}</code>
+                  </div>
+                </div>
+              </div>
+              <div class="blast-metrics">
+                <span class="metric-chip">${sym.callers.length} Callers</span>
+                <span class="metric-chip ${untestedCallers.length > 0 ? 'warn' : ''}">${untestedCallers.length} Untested</span>
+                <button class="btn btn-secondary open-evidence-btn" style="padding: 4px 10px; font-size: 11px;" data-file="${escapeHtml(sym.filePath)}" data-line="1">
+                  View Definition
+                </button>
+              </div>
+            </div>
+
+            <!-- Downstream Tree Branches -->
+            ${
+              sym.callers.length === 0
+                ? `<div style="padding: 8px 12px; color: var(--text-muted); font-size: 11px; font-style: italic;">
+                     No downstream callers detected in repository (leaf module or top-level entrypoint).
+                   </div>`
+                : `
+                <div class="blast-tree-container">
+                  ${sym.callers
+                    .map(
+                      (c) => `
+                    <div class="blast-caller-node ${c.hasTest ? 'tested' : 'untested'}" data-caller="${escapeHtml(c.callerName.toLowerCase())}" data-tested="${c.hasTest ? 'true' : 'false'}">
+                      <div class="caller-details">
+                        <span class="caller-icon">↳</span>
+                        <span class="caller-name">${escapeHtml(c.callerName)}</span>
+                        <span class="caller-file">${escapeHtml(path.basename(c.filePath))}:${c.line}</span>
+                        ${
+                          c.hasTest
+                            ? `<span class="tag-tested">✓ Test Covered</span>`
+                            : `<span class="tag-untested">⚠️ Untested Caller</span>`
+                        }
+                      </div>
+                      <button class="btn btn-secondary open-evidence-btn" style="padding: 3px 8px; font-size: 11px;" data-file="${escapeHtml(c.filePath)}" data-line="${c.line}">
+                        Open Caller
+                      </button>
+                    </div>
+                  `
+                    )
+                    .join('')}
+                </div>
+              `
+            }
+          </div>
+        `;
+          })
+          .join('')}
+      </div>
+
+      <!-- Connected API Routes Section -->
+      ${
+        impact.affectedRoutes.length > 0
+          ? `
+        <div class="routes-section-card">
+          <div style="font-weight: 700; font-size: 13px; color: #FFFFFF; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+            <span>🌐</span> Directly Affected API Endpoints (${impact.affectedRoutes.length})
+          </div>
+          ${impact.affectedRoutes
+            .map(
+              (r) => `
+            <div class="route-item-row">
+              <div>
+                <span class="route-badge">${escapeHtml(r.method)}</span>
+                <strong style="color: #F8FAFC; font-family: var(--mono-family); font-size: 12px;">${escapeHtml(r.routePath)}</strong>
+                <span style="color: var(--text-muted); font-size: 11px; margin-left: 8px;">(${escapeHtml(path.basename(r.filePath))}:${r.line})</span>
+              </div>
+              <button class="btn btn-secondary open-evidence-btn" style="padding: 3px 8px; font-size: 11px;" data-file="${escapeHtml(r.filePath)}" data-line="${r.line}">
+                Open Route
+              </button>
+            </div>
+          `
+            )
+            .join('')}
+        </div>
+      `
+          : ''
+      }
+    `
+    }
+  </section>
+
+  <!-- TAB 3: RULES -->
+  <section class="tab-pane" id="tab-rules">
+    <div class="card">
+      <table class="rules-table">
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Project Rule</th>
+            <th>Evidence / Details</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${
+            rules.length === 0
+              ? '<tr><td colspan="4" style="text-align: center;">No rules defined. Click "Edit Rules" to create .proofcode/rules.md.</td></tr>'
+              : rules
+                  .map(
+                    (r) => `
+            <tr>
+              <td>
+                <span class="severity-tag ${r.status === 'PASS' ? 'low' : r.status === 'VIOLATION' ? 'high' : 'medium'}">
+                  ${r.status}
+                </span>
+              </td>
+              <td>
+                <strong>${r.rule.title}</strong>
+                <div style="font-size: 11px; color: var(--text-muted);">${r.rule.description}</div>
+              </td>
+              <td style="color: ${r.status === 'VIOLATION' ? 'var(--danger)' : '#CBD5E1'};">
+                ${r.detectedMessage || 'Compliant with policy.'}
+              </td>
+              <td>
+                ${
+                  r.file && r.line
+                    ? `<button class="btn btn-secondary open-evidence-btn" data-file="${r.file}" data-line="${r.line}">View Code</button>`
+                    : '<span style="color: var(--text-muted);">—</span>'
+                }
+              </td>
+            </tr>
+          `
+                  )
+                  .join('')
+          }
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- TAB 4: CHECKS -->
+  <section class="tab-pane" id="tab-checks">
+    <div class="card">
+      <table class="rules-table">
+        <thead>
+          <tr>
+            <th>Check Name</th>
+            <th>Status</th>
+            <th>Details</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${
+            checks
+              ? `
+            <tr>
+              <td><strong>${checks.typescript.name}</strong></td>
+              <td><span class="severity-tag ${checks.typescript.status === 'PASS' ? 'low' : 'high'}">${checks.typescript.status}</span></td>
+              <td>${checks.typescript.message || 'Pass'}</td>
+            </tr>
+            <tr>
+              <td><strong>${checks.eslint.name}</strong></td>
+              <td><span class="severity-tag ${checks.eslint.status === 'PASS' ? 'low' : 'medium'}">${checks.eslint.status}</span></td>
+              <td>${checks.eslint.message || 'Pass'}</td>
+            </tr>
+            <tr>
+              <td><strong>${checks.unitTests.name}</strong></td>
+              <td><span class="severity-tag ${checks.unitTests.status === 'PASS' ? 'low' : checks.unitTests.status === 'SKIPPED' ? 'medium' : 'high'}">${checks.unitTests.status}</span></td>
+              <td>${checks.unitTests.message || 'Pass'}</td>
+            </tr>
+            <tr>
+              <td><strong>${checks.build.name}</strong></td>
+              <td><span class="severity-tag ${checks.build.status === 'PASS' ? 'low' : checks.build.status === 'SKIPPED' ? 'medium' : 'high'}">${checks.build.status}</span></td>
+              <td>${checks.build.message || 'Pass'}</td>
+            </tr>
+          `
+              : '<tr><td colspan="3">No live checks configured yet.</td></tr>'
+          }
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <script>
+    const vscode = acquireVsCodeApi();
+
+    // Tab switcher
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+        tab.classList.add('active');
+        const targetId = tab.getAttribute('data-tab');
+        const targetPane = document.getElementById(targetId);
+        if (targetPane) targetPane.classList.add('active');
+      });
+    });
+
+    // Actions
+    document.getElementById('btn-verify')?.addEventListener('click', () => {
+      vscode.postMessage({ type: 'verify' });
+    });
+
+    document.getElementById('btn-export')?.addEventListener('click', () => {
+      vscode.postMessage({ type: 'exportMarkdown' });
+    });
+
+    document.getElementById('btn-init-rules')?.addEventListener('click', () => {
+      vscode.postMessage({ type: 'initRules' });
+    });
+
+    document.querySelectorAll('.open-evidence-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const file = btn.getAttribute('data-file');
+        const line = parseInt(btn.getAttribute('data-line') || '1', 10);
+        vscode.postMessage({ type: 'openEvidence', file, line });
+      });
+    });
+
+    // Live Impact Blast Graph Search & Filter
+    const searchInput = document.getElementById('impact-search');
+    let activeFilter = 'all';
+
+    function applyImpactFilters() {
+      const query = (searchInput ? searchInput.value : '').toLowerCase().trim();
+      const symbolCards = document.querySelectorAll('.blast-symbol-card');
+
+      symbolCards.forEach(card => {
+        const symName = card.getAttribute('data-symbol') || '';
+        const fileName = card.getAttribute('data-file') || '';
+        const untestedCount = parseInt(card.getAttribute('data-untested') || '0', 10);
+        const callerNodes = card.querySelectorAll('.blast-caller-node');
+
+        let matchesSearch = !query || symName.includes(query) || fileName.includes(query);
+        let visibleCallersCount = 0;
+
+        callerNodes.forEach(node => {
+          const callerName = node.getAttribute('data-caller') || '';
+          const isTested = node.getAttribute('data-tested') === 'true';
+
+          let callerMatchSearch = !query || callerName.includes(query) || matchesSearch;
+          let callerMatchFilter = activeFilter === 'all' || (activeFilter === 'untested' && !isTested);
+
+          if (callerMatchSearch && callerMatchFilter) {
+            node.style.display = 'flex';
+            visibleCallersCount++;
+          } else {
+            node.style.display = 'none';
+          }
+        });
+
+        const showCard = (activeFilter === 'all' && (matchesSearch || visibleCallersCount > 0)) ||
+                         (activeFilter === 'untested' && untestedCount > 0 && (matchesSearch || visibleCallersCount > 0));
+
+        card.style.display = showCard ? 'block' : 'none';
+      });
+
+      const routesCard = document.querySelector('.routes-section-card');
+      if (routesCard) {
+        routesCard.style.display = (activeFilter === 'all' || activeFilter === 'routes') ? 'block' : 'none';
+      }
+    }
+
+    searchInput?.addEventListener('input', applyImpactFilters);
+
+    document.querySelectorAll('.filter-pill').forEach(pill => {
+      pill.addEventListener('click', () => {
+        document.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
+        pill.classList.add('active');
+        activeFilter = pill.getAttribute('data-filter') || 'all';
+        applyImpactFilters();
+      });
+    });
+  </script>
+</body>
+</html>`;
+  }
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
