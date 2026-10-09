@@ -4,3 +4,10 @@
     {
       "name": "Run ProofCode Extension",
       "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}",
+        "${workspaceFolder}/examples/demo-app"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/dist/**/*.js"
