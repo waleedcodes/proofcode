@@ -333,3 +333,41 @@ export class ProofCodeEngine {
         detail: r.description,
         affectedCallersOrRoutes: [path.basename(r.file)],
         evidenceFile: r.file,
+        evidenceLine: r.line
+      });
+    }
+
+    // 3. Check for rule violations (e.g. sensitive data exposure or ownership)
+    for (const rule of rules.filter((res) => res.status === 'VIOLATION')) {
+      breakage.push({
+        id: `BRK-RULE-${rule.rule.id}`,
+        severity: rule.rule.severity,
+        area: 'Project Policy & Architecture',
+        trigger: `Violated: "${rule.rule.title}"`,
+        detail: rule.detectedMessage || rule.rule.description,
+        affectedCallersOrRoutes: rule.file ? [path.basename(rule.file)] : [],
+        evidenceFile: rule.file,
+        evidenceLine: rule.line
+      });
+    }
+
+    // 4. Untested Callers on Core Services
+    const generalUntested = impact.changedSymbols.filter(
+      (s) => !authSymbols.includes(s) && s.callers.some((c) => !c.hasTest)
+    );
+    for (const s of generalUntested.slice(0, 5)) {
+      const untested = s.callers.filter((c) => !c.hasTest);
+      breakage.push({
+        id: `BRK-UNTESTED-${s.symbolName}`,
+        severity: 'MEDIUM',
+        area: 'Regression Vulnerability',
+        trigger: `Modified '${s.symbolName}' has untested dependents.`,
+        detail: `${untested.length} caller(s) do not have regression tests to verify that this change does not break them.`,
+        affectedCallersOrRoutes: untested.map((c) => `${c.callerName} (${path.basename(c.filePath)})`),
+        evidenceFile: s.filePath
+      });
+    }
+
+    return breakage;
+  }
+}
