@@ -820,3 +820,209 @@ export class ProofCodeWebviewPanel {
     }
 
     .routes-section-card {
+      background: rgba(30, 41, 59, 0.4);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-top: 16px;
+    }
+
+    .route-item-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    }
+
+    .route-item-row:last-child {
+      border-bottom: none;
+    }
+
+    .route-badge {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(59, 130, 246, 0.2);
+      color: #60A5FA;
+      margin-right: 8px;
+    }
+
+    /* Rules Table */
+    .rules-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+
+    .rules-table th, .rules-table td {
+      padding: 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--card-border);
+    }
+
+    .rules-table th {
+      color: var(--text-muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 48px;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+
+  <header class="header">
+    <div class="brand">
+      <div class="brand-logo">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#000" stroke-width="2.5">
+          <path d="M12 2L4 5v6.09c0 5.05 3.41 9.76 8 10.91 4.59-1.15 8-5.86 8-10.91V5l-8-3z"/>
+          <path d="m9 12 2 2 4-4"/>
+        </svg>
+      </div>
+      <div>
+        <h1 class="brand-title">ProofCode</h1>
+        <div class="brand-tagline">AI writes code. ProofCode proves the change.</div>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button id="btn-verify" class="btn btn-primary">
+        ⚡ Run Verification
+      </button>
+      <button id="btn-export" class="btn btn-secondary">
+        📄 Export Report
+      </button>
+      <button id="btn-init-rules" class="btn btn-secondary">
+        📋 Edit Rules
+      </button>
+    </div>
+  </header>
+
+  <div class="top-grid">
+    <div class="card score-card">
+      <div class="metric-title">Verification Score</div>
+      <div class="gauge-container">
+        <svg class="gauge-circle" viewBox="0 0 140 140">
+          <circle class="gauge-bg" cx="70" cy="70" r="60"/>
+          <circle class="gauge-fill" cx="70" cy="70" r="60"/>
+        </svg>
+        <div class="gauge-value">${score}%</div>
+      </div>
+      <div class="verdict-badge">${verdictText}</div>
+    </div>
+
+    <div class="metrics-grid">
+      <div class="metric-box">
+        <div class="metric-title">Files Changed</div>
+        <div class="metric-number">${summary.filesChanged}</div>
+        <div class="metric-diff">+${summary.linesAdded} / -${summary.linesDeleted} lines</div>
+      </div>
+      <div class="metric-box">
+        <div class="metric-title">Functions Affected</div>
+        <div class="metric-number">${summary.symbolsAffected}</div>
+        <div class="metric-diff">${summary.apiRoutesAffected} API routes</div>
+      </div>
+      <div class="metric-box">
+        <div class="metric-title">Critical Risks</div>
+        <div class="metric-number" style="color: ${summary.highRiskCount > 0 ? 'var(--danger)' : 'var(--success)'}">
+          ${summary.highRiskCount}
+        </div>
+        <div class="metric-diff" style="color: var(--warning)">+${summary.mediumRiskCount} medium, ${summary.lowRiskCount} low</div>
+      </div>
+      <div class="metric-box">
+        <div class="metric-title">Untested Callers</div>
+        <div class="metric-number" style="color: ${(impact?.untestedCallersCount || 0) > 0 ? 'var(--warning)' : 'var(--success)'}">
+          ${impact?.untestedCallersCount ?? 0}
+        </div>
+        <div class="metric-diff">${impact?.totalCallersCount ?? 0} total callers</div>
+      </div>
+    </div>
+  </div>
+
+  <nav class="tabs">
+    <div class="tab active" data-tab="tab-risks" id="tab-btn-risks">
+      Risks & Evidence <span class="tab-badge ${summary.highRiskCount > 0 ? 'danger' : ''}">${risks.length}</span>
+    </div>
+    <div class="tab" data-tab="tab-breakage" id="tab-btn-breakage">
+      💥 What Could Break <span class="tab-badge ${breakage.some((b) => b.severity === 'HIGH') ? 'danger' : ''}">${breakage.length}</span>
+    </div>
+    <div class="tab" data-tab="tab-impact" id="tab-btn-impact">
+      Impact Analysis <span class="tab-badge">${summary.symbolsAffected}</span>
+    </div>
+    <div class="tab" data-tab="tab-rules" id="tab-btn-rules">
+      Project Rules <span class="tab-badge">${rules.length}</span>
+    </div>
+    <div class="tab" data-tab="tab-checks" id="tab-btn-checks">
+      Tests & Checks
+    </div>
+  </nav>
+
+  <!-- TAB 1: RISKS -->
+  <section class="tab-pane active" id="tab-risks">
+    ${
+      risks.length === 0
+        ? `<div class="card empty-state">
+             <h3>✅ No Static Risks Detected</h3>
+             <p style="margin-top: 8px;">No SQL injection, missing authorization, hardcoded secrets, or unhandled errors found in changed files.</p>
+           </div>`
+        : risks
+            .map(
+              (r) => `
+        <div class="risk-card ${r.severity.toLowerCase()}">
+          <div class="risk-header">
+            <div class="risk-title-wrap">
+              <span class="severity-tag ${r.severity.toLowerCase()}">${r.severity}</span>
+              <span class="risk-title">${r.title}</span>
+            </div>
+            <button class="btn btn-secondary open-evidence-btn" data-file="${r.file}" data-line="${r.line}">
+              🔍 Open Evidence (${path.basename(r.file)}:${r.line})
+            </button>
+          </div>
+          <p style="color: #CBD5E1; margin-bottom: 8px;">${r.description}</p>
+          
+          ${
+            r.evidenceTrace.length > 0
+              ? `<div class="evidence-path"><strong>Evidence Trace:</strong>\n${r.evidenceTrace
+                  .map((t, idx) => `  [Step ${idx + 1}] Line ${t.line}: ${t.description}`)
+                  .join('\n')}`
+              : ''
+          }</div>
+
+          ${
+            r.snippet
+              ? `<div class="code-preview"><code>${escapeHtml(r.snippet)}</code></div>`
+              : ''
+          }
+
+          <div class="recommendation-box">
+            <strong>Action:</strong> ${r.recommendation}
+          </div>
+        </div>
+      `
+            )
+            .join('')
+    }
+  </section>
+
+  <!-- TAB: WHAT COULD BREAK -->
+  <section class="tab-pane" id="tab-breakage">
+    ${
+      breakage.length === 0
+        ? `<div class="card empty-state">
+             <h3>✅ No Regression Breakage Risks Detected</h3>
+             <p style="margin-top: 8px;">No modified core services with untested dependents, critical route vulnerabilities, or rule breaches found.</p>
+           </div>`
+        : breakage
+            .map(
+              (b) => `
+        <div class="risk-card ${b.severity.toLowerCase()}">
+          <div class="risk-header">
+            <div class="risk-title-wrap">
+              <span class="severity-tag ${b.severity.toLowerCase()}">${b.severity}</span>
+              <span class="risk-title">${b.area}: ${b.trigger}</span>
