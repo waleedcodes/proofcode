@@ -36,3 +36,48 @@ describe('ProofCodeWebviewPanel', () => {
             ],
             isApiRoute: false
           }
+        ],
+        affectedFiles: ['/workspace/src/Dashboard.tsx', '/workspace/src/AdminPanel.tsx'],
+        affectedCallers: [],
+        affectedRoutes: [
+          {
+            routePath: '/api/auth/session',
+            method: 'GET',
+            filePath: '/workspace/src/api/auth.ts',
+            line: 5
+          }
+        ],
+        totalCallersCount: 2,
+        untestedCallersCount: 1
+      },
+      risks: [],
+      breakageRisks: [
+        {
+          id: 'BRK-1',
+          severity: 'HIGH',
+          area: 'Authentication',
+          trigger: 'getUser modified',
+          detail: 'Downstream callers at risk',
+          affectedCallersOrRoutes: ['AdminPanel']
+        }
+      ],
+      rules: [],
+      checks: {
+        typescript: { name: 'TypeScript', status: 'PASS' },
+        eslint: { name: 'ESLint', status: 'PASS' },
+        unitTests: { name: 'Unit Tests', status: 'PASS' },
+        build: { name: 'Build', status: 'PASS' }
+      }
+    };
+
+    // Instantiate panel via private constructor method or test _getHtmlForWebview
+    // We can call createOrShow with mock panel
+    const mockWebview: any = {
+      html: '',
+      onDidReceiveMessage: () => ({ dispose: () => {} }),
+      asWebviewUri: (uri: any) => uri,
+      cspSource: 'https:'
+    };
+
+    const mockPanel: any = {
+      webview: mockWebview,
