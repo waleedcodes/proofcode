@@ -12,3 +12,19 @@ describe('TestRunner', () => {
   });
 
   afterEach(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('should detect pnpm, yarn, bun, and npm based on lockfiles', () => {
+    const runner = new TestRunner();
+
+    expect(runner.detectPackageManager(tempDir)).toBe('npm');
+
+    fs.writeFileSync(path.join(tempDir, 'pnpm-lock.yaml'), '');
+    expect(runner.detectPackageManager(tempDir)).toBe('pnpm');
+
+    fs.unlinkSync(path.join(tempDir, 'pnpm-lock.yaml'));
+    fs.writeFileSync(path.join(tempDir, 'yarn.lock'), '');
+    expect(runner.detectPackageManager(tempDir)).toBe('yarn');
+
+    fs.unlinkSync(path.join(tempDir, 'yarn.lock'));
