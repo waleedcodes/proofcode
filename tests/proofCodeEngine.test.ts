@@ -100,3 +100,38 @@ describe('ProofCodeEngine & ReportFormatter', () => {
         build: { name: 'Build Check', status: 'PASS' }
       }
     };
+
+    const md = ReportFormatter.toMarkdown(sampleReport);
+    expect(md).toContain('# 🛡️ ProofCode Verification Report');
+    expect(md).toContain('82%');
+    expect(md).toContain('NEEDS REVIEW');
+    expect(md).toContain('Unsafe User-Controlled URL');
+    expect(md).toContain('getUser');
+
+    const terminal = ReportFormatter.toTerminal(sampleReport);
+    expect(terminal).toContain('PROOFCODE CHANGE VERIFICATION');
+    expect(terminal).toContain('82%');
+
+    const json = ReportFormatter.toJson(sampleReport);
+    expect(JSON.parse(json).score.total).toBe(82);
+
+    sampleReport.breakageRisks = [
+      {
+        id: 'BRK-1',
+        severity: 'HIGH',
+        area: 'Authentication & Session Flow',
+        trigger: 'Symbol auth was modified',
+        detail: '3 downstream callers depend on this behavior.',
+        affectedCallersOrRoutes: ['login (route.ts)', 'AdminPanel.tsx']
+      }
+    ];
+
+    const mdWithBreakage = ReportFormatter.toMarkdown(sampleReport);
+    expect(mdWithBreakage).toContain('## 💥 What Could This Change Break?');
+    expect(mdWithBreakage).toContain('Authentication & Session Flow');
+
+    const termWithBreakage = ReportFormatter.toTerminal(sampleReport);
+    expect(termWithBreakage).toContain('WHAT COULD THIS CHANGE BREAK?');
+    expect(termWithBreakage).toContain('Authentication & Session Flow');
+  });
+});
