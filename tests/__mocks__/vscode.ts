@@ -109,3 +109,40 @@ export const window = {
     reveal: () => {},
     dispose: () => {}
   })
+};
+
+export const workspace = {
+  workspaceFolders: [],
+  getConfiguration: () => ({
+    get: (key: string, defaultValue: any) => defaultValue
+  }),
+  openTextDocument: async () => ({}),
+  onDidSaveTextDocument: () => ({ dispose: () => {} })
+};
+
+export const languages = {
+  createDiagnosticCollection: (name?: string) => ({
+    name,
+    clear: () => {},
+    set: (_uri: any, _diags: any[]) => {},
+    delete: () => {},
+    dispose: () => {}
+  }),
+  registerCodeLensProvider: () => ({ dispose: () => {} }),
+  registerCodeActionsProvider: () => ({ dispose: () => {} })
+};
+
+export const commands = {
+  registerCommand: (_cmd: string, _cb: any) => ({ dispose: () => {} }),
+  executeCommand: async () => {}
+};
+
+export enum StatusBarAlignment {
+  Left = 1,
+  Right = 2
+}
+
+export enum ViewColumn {
+  One = 1,
+  Two = 2
+}
