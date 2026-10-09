@@ -128,3 +128,152 @@ export class ProjectGraph {
         }
       }
     }
+
+    return null;
+  }
+
+  private findSourceFiles(dir: string, fileList: string[] = []): string[] {
+    if (!fs.existsSync(dir)) return fileList;
+
+    const ignoredDirs = new Set([
+      'node_modules',
+      '.git',
+      'dist',
+      'out',
+      '.next',
+      '.turbo',
+      'coverage',
+      'build'
+    ]);
+
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (!ignoredDirs.has(entry.name) && !entry.name.startsWith('.')) {
+          this.findSourceFiles(fullPath, fileList);
+        }
+      } else if (entry.isFile()) {
+        if (/\.(ts|tsx|js|jsx|mjs|cjs)$/.test(entry.name) && !entry.name.endsWith('.d.ts')) {
+          fileList.push(fullPath);
+        }
+      }
+    }
+
+    return fileList;
+  }
+
+  public getAnalysis(filePath: string): FileAnalysis | undefined {
+    return this.fileAnalyses.get(filePath);
+  }
+
+  public getDependents(filePath: string): Set<string> {
+    return this.fileDependents.get(filePath) || new Set();
+  }
+
+  public isTestFile(filePath: string): boolean {
+    const normalized = filePath.replace(/\\/g, '/');
+    return (
+      normalized.includes('.test.') ||
+      normalized.includes('.spec.') ||
+      normalized.includes('/__tests__/') ||
+      normalized.includes('/tests/')
+    );
+  }
+
+  /**
+   * Computes the change impact across the codebase given a map of changed files and lines.
+   */
+  public computeImpact(fileChangedLines: Map<string, number[]>): ImpactAnalysis {
+    const changedFiles = Array.from(fileChangedLines.keys());
+    const affectedFilesSet = new Set<string>();
+    const affectedCallers: AffectedCaller[] = [];
+    const affectedRoutes: AffectedRoute[] = [];
+    const changedSymbolsList: AffectedSymbol[] = [];
+
+    // Collect all test files in the workspace for test coverage check
+    const allTestFiles = Array.from(this.fileAnalyses.keys()).filter((f) => this.isTestFile(f));
+
+    for (const [changedFile, lineNumbers] of fileChangedLines.entries()) {
+      const analysis = this.fileAnalyses.get(changedFile);
+      if (!analysis) continue;
+
+      // Find changed symbols in this file
+      const touchedSymbols = AstAnalyzer.findSymbolsAtLines(analysis.symbols, lineNumbers);
+
+      for (const sym of touchedSymbols) {
+        const callers = this.findCallersForSymbol(sym, changedFile, allTestFiles);
+        const isApiRoute =
+          sym.kind === 'api_route' ||
+          (analysis.hasApiRoute &&
+            /^(GET|POST|PUT|DELETE|PATCH)$/i.test(sym.name));
+
+        changedSymbolsList.push({
+          symbolName: sym.name,
+          kind: sym.kind,
+          filePath: changedFile,
+          callers,
+          isApiRoute
+        });
+
+        for (const caller of callers) {
+          affectedCallers.push(caller);
+          affectedFilesSet.add(caller.filePath);
+        }
+      }
+
+      // Add direct and transitive dependents
+      const dependents = this.getTransitiveDependents(changedFile);
+      for (const dep of dependents) {
+        affectedFilesSet.add(dep);
+        const depAnalysis = this.fileAnalyses.get(dep);
+        if (depAnalysis && depAnalysis.hasApiRoute) {
+          for (const route of depAnalysis.apiRoutes) {
+            affectedRoutes.push({
+              routePath: route.path,
+              method: route.method,
+              filePath: dep,
+              line: route.line
+            });
+          }
+        }
+      }
+
+      // Check if the changed file itself has API routes
+      if (analysis.hasApiRoute) {
+        for (const route of analysis.apiRoutes) {
+          affectedRoutes.push({
+            routePath: route.path,
+            method: route.method,
+            filePath: changedFile,
+            line: route.line
+          });
+        }
+      }
+    }
+
+    // Deduplicate routes
+    const uniqueRoutesMap = new Map<string, AffectedRoute>();
+    for (const r of affectedRoutes) {
+      const key = `${r.method}:${r.filePath}:${r.line}`;
+      uniqueRoutesMap.set(key, r);
+    }
+
+    const totalCallersCount = affectedCallers.length;
+    const untestedCallersCount = affectedCallers.filter((c) => !c.hasTest).length;
+
+    return {
+      changedFiles,
+      changedSymbols: changedSymbolsList,
+      affectedFiles: Array.from(affectedFilesSet),
+      affectedCallers,
+      affectedRoutes: Array.from(uniqueRoutesMap.values()),
+      totalCallersCount,
+      untestedCallersCount
+    };
+  }
+
+  private findCallersForSymbol(
+    sym: SymbolInfo,
+    defFile: string,
+    allTestFiles: string[]
