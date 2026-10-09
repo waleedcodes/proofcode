@@ -10,3 +10,8 @@ export async function POST(req: Request) {
 
   // Leaks passwordHash in response
   return Response.json({
+    success: true,
+    user,
+    passwordHash: user ? user.passwordHash : null
+  });
+}
