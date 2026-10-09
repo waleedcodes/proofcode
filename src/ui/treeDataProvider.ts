@@ -211,3 +211,74 @@ export class ProofCodeTreeDataProvider implements vscode.TreeDataProvider<ProofC
           'risk_item',
           risk
         );
+        item.description = `${path.basename(risk.file)}:${risk.line}`;
+        item.tooltip = `${risk.description}\n\nEvidence:\n${risk.evidenceTrace
+          .map((t) => `${t.line}: ${t.description}`)
+          .join('\n')}\n\nRecommendation: ${risk.recommendation}`;
+        item.iconPath = new vscode.ThemeIcon(icon);
+        item.command = {
+          command: 'proofcode.openEvidence',
+          title: 'Open Evidence',
+          arguments: [risk.file, risk.line]
+        };
+        return item;
+      });
+    }
+
+    // Children of Rules
+    if (element.contextValue === 'rules') {
+      return report.rules.map((ruleResult: RuleResult) => {
+        const item = new ProofCodeTreeItem(
+          `[${ruleResult.status}] ${ruleResult.rule.title}`,
+          vscode.TreeItemCollapsibleState.None
+        );
+        item.description = ruleResult.detectedMessage || ruleResult.rule.description;
+        item.iconPath = new vscode.ThemeIcon(
+          ruleResult.status === 'PASS'
+            ? 'pass'
+            : ruleResult.status === 'VIOLATION'
+            ? 'error'
+            : 'warning'
+        );
+        if (ruleResult.file && ruleResult.line) {
+          item.command = {
+            command: 'proofcode.openEvidence',
+            title: 'Open Violation Location',
+            arguments: [ruleResult.file, ruleResult.line]
+          };
+        }
+        return item;
+      });
+    }
+
+    // Children of Checks
+    if (element.contextValue === 'checks') {
+      const items: ProofCodeTreeItem[] = [];
+      const checks = [
+        report.checks.typescript,
+        report.checks.eslint,
+        report.checks.unitTests,
+        report.checks.build
+      ];
+
+      for (const check of checks) {
+        const item = new ProofCodeTreeItem(
+          `${check.name}: ${check.status}`,
+          vscode.TreeItemCollapsibleState.None
+        );
+        item.description = check.message;
+        item.iconPath = new vscode.ThemeIcon(
+          check.status === 'PASS'
+            ? 'pass'
+            : check.status === 'FAIL'
+            ? 'error'
+            : 'debug-pause'
+        );
+        items.push(item);
+      }
+      return items;
+    }
+
+    return [];
+  }
+}
