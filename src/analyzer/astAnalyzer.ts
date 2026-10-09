@@ -244,3 +244,85 @@ export class AstAnalyzer {
 
       // 6. Interfaces & Type Aliases
       if (ts.isInterfaceDeclaration(node)) {
+        const name = node.name.text;
+        const start = getLineAndColumn(node.getStart(sourceFile));
+        const end = getLineAndColumn(node.getEnd());
+        const isExported = Boolean(
+          node.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword)
+        );
+
+        symbols.push({
+          name,
+          kind: 'interface',
+          filePath,
+          startLine: start.line,
+          endLine: end.line,
+          startColumn: start.column,
+          endColumn: end.column,
+          isExported,
+          calls: []
+        });
+      }
+
+      if (ts.isTypeAliasDeclaration(node)) {
+        const name = node.name.text;
+        const start = getLineAndColumn(node.getStart(sourceFile));
+        const end = getLineAndColumn(node.getEnd());
+        const isExported = Boolean(
+          node.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword)
+        );
+
+        symbols.push({
+          name,
+          kind: 'type_alias',
+          filePath,
+          startLine: start.line,
+          endLine: end.line,
+          startColumn: start.column,
+          endColumn: end.column,
+          isExported,
+          calls: []
+        });
+      }
+
+      ts.forEachChild(node, visit);
+    };
+
+    ts.forEachChild(sourceFile, visit);
+
+    if (isNextPagesApiRoute && apiRoutes.length === 0) {
+      apiRoutes.push({
+        method: 'ALL',
+        path: filePath,
+        handlerSymbol: 'default',
+        line: 1
+      });
+    }
+
+    return {
+      filePath,
+      symbols,
+      imports,
+      exports,
+      hasApiRoute: apiRoutes.length > 0,
+      apiRoutes
+    };
+  }
+
+  /**
+   * Filters symbols that intersect with the provided modified line numbers.
+   */
+  public static findSymbolsAtLines(symbols: SymbolInfo[], lineNumbers: number[]): SymbolInfo[] {
+    if (lineNumbers.length === 0) return [];
+    const lineSet = new Set(lineNumbers);
+
+    return symbols.filter((sym) => {
+      for (let l = sym.startLine; l <= sym.endLine; l++) {
+        if (lineSet.has(l)) {
+          return true;
+        }
+      }
+      return false;
+    });
+  }
+}
