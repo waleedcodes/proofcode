@@ -82,3 +82,32 @@ export class ProofCodeCodeActionProvider implements vscode.CodeActionProvider {
       }
 
       // 3. Quick Fix for PC-AUTH-001: Missing Authorization Check in API Route
+      if (diag.code === 'PC-AUTH-001') {
+        const authAction = new vscode.CodeAction(
+          '🛡️ ProofCode: Insert session authentication guard',
+          vscode.CodeActionKind.QuickFix
+        );
+        authAction.isPreferred = true;
+        authAction.diagnostics = [diag];
+
+        const authEdit = new vscode.WorkspaceEdit();
+        const authSnippet = `${indent}  const session = await auth();\n${indent}  if (!session) return new Response('Unauthorized', { status: 401 });\n`;
+        authEdit.insert(document.uri, new vscode.Position(lineIdx + 1, 0), authSnippet);
+        authAction.edit = authEdit;
+        actions.push(authAction);
+      }
+
+      // 4. Quick Fix for PC-SEC-001: Potential SQL Injection
+      if (diag.code === 'PC-SEC-001') {
+        const sqlAction = new vscode.CodeAction(
+          '🛡️ ProofCode: Review query parameterization guidance',
+          vscode.CodeActionKind.QuickFix
+        );
+        sqlAction.diagnostics = [diag];
+        actions.push(sqlAction);
+      }
+    }
+
+    return actions;
+  }
+}
