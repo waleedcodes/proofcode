@@ -655,3 +655,168 @@ export class ProofCodeWebviewPanel {
       padding-bottom: 10px;
       border-bottom: 1px solid rgba(255, 255, 255, 0.06);
     }
+
+    .blast-symbol-info {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .symbol-glyph {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      background: rgba(0, 229, 153, 0.15);
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 14px;
+      font-family: var(--mono-family);
+    }
+
+    .symbol-name-text {
+      font-size: 14px;
+      font-weight: 700;
+      color: #FFFFFF;
+      font-family: var(--mono-family);
+    }
+
+    .symbol-kind-tag {
+      font-size: 10px;
+      color: #94A3B8;
+      background: rgba(255, 255, 255, 0.06);
+      padding: 2px 6px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .blast-metrics {
+      display: flex;
+      gap: 8px;
+    }
+
+    .metric-chip {
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.04);
+      color: #CBD5E1;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .metric-chip.warn {
+      background: var(--warning-bg);
+      color: var(--warning);
+      border-color: var(--warning);
+      font-weight: 600;
+    }
+
+    .metric-chip.danger {
+      background: var(--danger-bg);
+      color: var(--danger);
+      border-color: var(--danger);
+      font-weight: 600;
+    }
+
+    .blast-tree-container {
+      position: relative;
+      padding-left: 20px;
+      margin-left: 12px;
+      border-left: 2px dashed rgba(0, 229, 153, 0.25);
+    }
+
+    .blast-caller-node {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 8px;
+      padding: 10px 14px;
+      margin: 8px 0;
+      transition: all 0.2s ease;
+    }
+
+    .blast-caller-node:hover {
+      background: rgba(255, 255, 255, 0.04);
+      border-color: rgba(255, 255, 255, 0.12);
+      transform: translateX(3px);
+    }
+
+    .blast-caller-node.untested {
+      border-left: 3px solid var(--warning);
+    }
+
+    .blast-caller-node.tested {
+      border-left: 3px solid var(--success);
+    }
+
+    .blast-caller-node::before {
+      content: '';
+      position: absolute;
+      left: -20px;
+      top: 50%;
+      width: 18px;
+      height: 2px;
+      background: rgba(0, 229, 153, 0.25);
+    }
+
+    .caller-details {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .caller-icon {
+      color: #94A3B8;
+      font-size: 12px;
+    }
+
+    .caller-name {
+      font-weight: 600;
+      font-size: 13px;
+      color: #F8FAFC;
+      font-family: var(--mono-family);
+    }
+
+    .caller-file {
+      font-size: 11px;
+      color: #94A3B8;
+      background: rgba(255, 255, 255, 0.04);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    .tag-tested {
+      font-size: 11px;
+      color: var(--success);
+      background: var(--success-bg);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .tag-untested {
+      font-size: 11px;
+      color: var(--warning);
+      background: var(--warning-bg);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .routes-section-card {
