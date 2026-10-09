@@ -49,3 +49,63 @@ export class CodeLens {
 }
 
 export class CodeActionKind {
+  public static readonly QuickFix = new CodeActionKind('quickfix');
+  constructor(public readonly value: string) {}
+}
+
+export class WorkspaceEdit {
+  public replace(_uri: any, _range: Range, _newText: string) {}
+  public insert(_uri: any, _position: Position, _newText: string) {}
+}
+
+export class CodeAction {
+  public edit?: WorkspaceEdit;
+  public isPreferred?: boolean;
+  public diagnostics?: Diagnostic[];
+  constructor(public title: string, public kind?: CodeActionKind) {}
+}
+
+export class Diagnostic {
+  public source?: string;
+  public code?: any;
+  constructor(public range: Range, public message: string, public severity: any) {}
+}
+
+export enum DiagnosticSeverity {
+  Error = 0,
+  Warning = 1,
+  Information = 2,
+  Hint = 3
+}
+
+export const Uri = {
+  file: (path: string) => ({ fsPath: path, path }),
+  joinPath: (base: any, ...segments: string[]) => ({
+    fsPath: `${base.fsPath}/${segments.join('/')}`
+  })
+};
+
+export const window = {
+  createStatusBarItem: () => ({
+    text: '',
+    tooltip: '',
+    command: '',
+    show: () => {},
+    dispose: () => {}
+  }),
+  registerTreeDataProvider: () => ({ dispose: () => {} }),
+  showInformationMessage: async () => {},
+  showWarningMessage: async () => {},
+  showErrorMessage: async () => {},
+  withProgress: async (_opts: any, task: any) => task(),
+  createWebviewPanel: () => ({
+    webview: {
+      html: '',
+      onDidReceiveMessage: () => ({ dispose: () => {} }),
+      asWebviewUri: (uri: any) => uri,
+      cspSource: 'https:'
+    },
+    onDidDispose: () => ({ dispose: () => {} }),
+    reveal: () => {},
+    dispose: () => {}
+  })
