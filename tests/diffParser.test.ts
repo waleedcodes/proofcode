@@ -17,3 +17,25 @@ index e69de29..49e29a1 100644
 +++ b/src/user.ts
 @@ -10,3 +10,5 @@ export function getUser(id: string) {
 -  return db.user.find(id);
++  const user = await db.user.findUnique({ where: { id } });
++  return user;
+ }
++export function deleteUser() {}
+`;
+
+    const result = DiffParser.parse(sampleDiff, '/workspace');
+    expect(result.files).toHaveLength(1);
+    const file = result.files[0];
+    expect(file.newPath).toBe('src/user.ts');
+    expect(file.addedLines).toEqual([10, 11, 13]);
+    expect(file.deletedLines).toEqual([10]);
+    expect(file.modifiedLineRanges).toEqual([
+      { start: 10, end: 11 },
+      { start: 13, end: 13 }
+    ]);
+  });
+
+  it('should identify new files correctly', () => {
+    const newFileDiff = `diff --git a/src/new-route.ts b/src/new-route.ts
+new file mode 100644
+index 0000000..49e29a1
