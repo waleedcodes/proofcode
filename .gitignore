@@ -5,3 +5,6 @@ coverage/
 *.vsix
 .DS_Store
 *.log
+.vscode-test/
+.proofcode/report.*
+examples/**/.proofcode/report.*
