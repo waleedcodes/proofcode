@@ -33,3 +33,43 @@ describe('ProofCodeCodeActionProvider', () => {
 
   it('should provide QuickFix to wrap unhandled async operation in try/catch (PC-REL-006)', () => {
     const provider = new ProofCodeCodeActionProvider();
+    const diag = new vscode.Diagnostic(
+      new vscode.Range(1, 4, 1, 30),
+      '[PC-REL-006] Unhandled Asynchronous Operation',
+      vscode.DiagnosticSeverity.Information
+    );
+    diag.source = 'ProofCode';
+    diag.code = 'PC-REL-006';
+
+    const actions = provider.provideCodeActions(
+      mockDocument,
+      new vscode.Range(1, 0, 1, 0),
+      { diagnostics: [diag] } as any,
+      {} as any
+    );
+
+    expect(actions.length).toBe(1);
+    expect(actions[0].title).toContain('Wrap in try/catch block');
+    expect(actions[0].edit).toBeDefined();
+    expect(actions[0].isPreferred).toBe(true);
+  });
+
+  it('should provide QuickFixes for unhandled null database result (PC-DATA-001)', () => {
+    const provider = new ProofCodeCodeActionProvider();
+    const diag = new vscode.Diagnostic(
+      new vscode.Range(1, 4, 1, 30),
+      '[PC-DATA-001] Unhandled Null/Undefined Database Result (user)',
+      vscode.DiagnosticSeverity.Warning
+    );
+    diag.source = 'ProofCode';
+    diag.code = 'PC-DATA-001';
+
+    const actions = provider.provideCodeActions(
+      mockDocument,
+      new vscode.Range(1, 0, 1, 0),
+      { diagnostics: [diag] } as any,
+      {} as any
+    );
+
+    expect(actions.length).toBeGreaterThanOrEqual(1);
+    const guardAction = actions.find((a) => a.title.includes('null guard'));
