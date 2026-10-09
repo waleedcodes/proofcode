@@ -112,3 +112,135 @@ export class AstAnalyzer {
         const sym: SymbolInfo = {
           name,
           kind: 'function',
+          filePath,
+          startLine: start.line,
+          endLine: end.line,
+          startColumn: start.column,
+          endColumn: end.column,
+          isExported,
+          isDefaultExport: isDefault,
+          calls
+        };
+        symbols.push(sym);
+
+        if (isExported) {
+          exports.push({ name, isDefault, line: start.line });
+          if (isNextAppRoute && /^(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)$/i.test(name)) {
+            apiRoutes.push({
+              method: name.toUpperCase(),
+              path: filePath,
+              handlerSymbol: name,
+              line: start.line
+            });
+          }
+        }
+      }
+
+      // 4. Variable statements (const foo = () => {}, const bar = function() {})
+      if (ts.isVariableStatement(node)) {
+        const isTopLevel = node.parent === sourceFile;
+        const isExported = Boolean(
+          node.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword)
+        );
+
+        if (isTopLevel) {
+          for (const decl of node.declarationList.declarations) {
+          if (ts.isIdentifier(decl.name)) {
+            const name = decl.name.text;
+            const start = getLineAndColumn(decl.getStart(sourceFile));
+            const end = getLineAndColumn(decl.getEnd());
+            let kind: SymbolKind = 'variable';
+
+            if (decl.initializer) {
+              if (ts.isArrowFunction(decl.initializer)) {
+                kind = 'arrow_function';
+              } else if (ts.isFunctionExpression(decl.initializer)) {
+                kind = 'function';
+              }
+            }
+
+            const calls = decl.initializer ? extractCallsFromNode(decl.initializer) : [];
+
+            symbols.push({
+              name,
+              kind,
+              filePath,
+              startLine: start.line,
+              endLine: end.line,
+              startColumn: start.column,
+              endColumn: end.column,
+              isExported,
+              calls
+            });
+
+            if (isExported) {
+              exports.push({ name, isDefault: false, line: start.line });
+              if (isNextAppRoute && /^(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)$/i.test(name)) {
+                apiRoutes.push({
+                  method: name.toUpperCase(),
+                  path: filePath,
+                  handlerSymbol: name,
+                  line: start.line
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+
+      // 5. Classes & Methods
+      if (ts.isClassDeclaration(node) && node.name) {
+        const className = node.name.text;
+        const start = getLineAndColumn(node.getStart(sourceFile));
+        const end = getLineAndColumn(node.getEnd());
+        const isExported = Boolean(
+          node.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword)
+        );
+        const isDefault = Boolean(
+          node.modifiers?.some((m) => m.kind === ts.SyntaxKind.DefaultKeyword)
+        );
+
+        symbols.push({
+          name: className,
+          kind: 'class',
+          filePath,
+          startLine: start.line,
+          endLine: end.line,
+          startColumn: start.column,
+          endColumn: end.column,
+          isExported,
+          isDefaultExport: isDefault,
+          calls: []
+        });
+
+        if (isExported) {
+          exports.push({ name: className, isDefault, line: start.line });
+        }
+
+        // Methods within class
+        for (const member of node.members) {
+          if (ts.isMethodDeclaration(member) && member.name && ts.isIdentifier(member.name)) {
+            const mName = member.name.text;
+            const mStart = getLineAndColumn(member.getStart(sourceFile));
+            const mEnd = getLineAndColumn(member.getEnd());
+            const mCalls = extractCallsFromNode(member);
+
+            symbols.push({
+              name: `${className}.${mName}`,
+              kind: 'method',
+              filePath,
+              startLine: mStart.line,
+              endLine: mEnd.line,
+              startColumn: mStart.column,
+              endColumn: mEnd.column,
+              isExported,
+              parentSymbol: className,
+              calls: mCalls
+            });
+          }
+        }
+      }
+
+      // 6. Interfaces & Type Aliases
+      if (ts.isInterfaceDeclaration(node)) {
