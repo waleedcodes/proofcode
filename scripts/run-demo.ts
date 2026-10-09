@@ -22,3 +22,12 @@ async function main() {
   }
 
   const reportPath = path.join(reportDir, 'report.md');
+  fs.writeFileSync(reportPath, ReportFormatter.toMarkdown(report), 'utf8');
+
+  console.log(`\n📄 Generated Markdown Verification Report at:\n${reportPath}\n`);
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
