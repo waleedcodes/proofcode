@@ -37,3 +37,48 @@ export class ProofCodeCodeActionProvider implements vscode.CodeActionProvider {
         edit.replace(document.uri, line.range, wrapped);
         action.edit = edit;
         actions.push(action);
+      }
+
+      // 2. Quick Fix for PC-DATA-001: Unhandled Null/Undefined Database Result
+      if (diag.code === 'PC-DATA-001') {
+        // Match variable name from diagnostic message or code line
+        const varMatch = diag.message.match(/\(([^)]+)\)/);
+        const varName = varMatch ? varMatch[1] : 'record';
+
+        // Fix A: Add null guard
+        const guardAction = new vscode.CodeAction(
+          `🛡️ ProofCode: Add null guard check (if (!${varName}))`,
+          vscode.CodeActionKind.QuickFix
+        );
+        guardAction.isPreferred = true;
+        guardAction.diagnostics = [diag];
+
+        const guardEdit = new vscode.WorkspaceEdit();
+        const guardText = `${indent}if (!${varName}) throw new Error('${varName} not found');\n`;
+        guardEdit.insert(document.uri, new vscode.Position(lineIdx, 0), guardText);
+        guardAction.edit = guardEdit;
+        actions.push(guardAction);
+
+        // Fix B: Use optional chaining
+        const dotIndex = lineText.indexOf(`${varName}.`);
+        if (dotIndex !== -1) {
+          const optChainAction = new vscode.CodeAction(
+            `🛡️ ProofCode: Use optional chaining (${varName}?.${lineText.slice(dotIndex + varName.length + 1).split(/\W/)[0]})`,
+            vscode.CodeActionKind.QuickFix
+          );
+          optChainAction.diagnostics = [diag];
+
+          const optEdit = new vscode.WorkspaceEdit();
+          const dotRange = new vscode.Range(
+            lineIdx,
+            dotIndex + varName.length,
+            lineIdx,
+            dotIndex + varName.length + 1
+          );
+          optEdit.replace(document.uri, dotRange, '?.');
+          optChainAction.edit = optEdit;
+          actions.push(optChainAction);
+        }
+      }
+
+      // 3. Quick Fix for PC-AUTH-001: Missing Authorization Check in API Route
