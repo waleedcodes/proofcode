@@ -98,3 +98,37 @@ export async function GET(req: Request) {
 export async function getProfile(id: string) {
   const user = await db.user.findUnique({ where: { id } });
   return user.email;
+}
+`;
+    const findings = RiskEngine.analyzeFile('/src/profile.ts', code);
+    const nullRisk = findings.find((f) => f.ruleId === 'PC-DATA-001');
+    expect(nullRisk).toBeDefined();
+    expect(nullRisk?.severity).toBe('MEDIUM');
+    expect(nullRisk?.title).toContain('Unhandled Null/Undefined Database Result');
+  });
+
+  it('should NOT flag when null check is present', () => {
+    const code = `
+export async function getProfile(id: string) {
+  const user = await db.user.findUnique({ where: { id } });
+  if (!user) throw new Error('Not found');
+  return user.email;
+}
+`;
+    const findings = RiskEngine.analyzeFile('/src/profile.ts', code);
+    const nullRisk = findings.find((f) => f.ruleId === 'PC-DATA-001');
+    expect(nullRisk).toBeUndefined();
+  });
+
+  it('should NOT flag when optional chaining is used', () => {
+    const code = `
+export async function getProfile(id: string) {
+  const user = await db.user.findUnique({ where: { id } });
+  return user?.email;
+}
+`;
+    const findings = RiskEngine.analyzeFile('/src/profile.ts', code);
+    const nullRisk = findings.find((f) => f.ruleId === 'PC-DATA-001');
+    expect(nullRisk).toBeUndefined();
+  });
+});
