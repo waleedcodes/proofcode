@@ -1,0 +1,59 @@
+{
+  "name": "proofcode",
+  "displayName": "ProofCode - Code Change Verification",
+  "description": "AI writes code. ProofCode proves the change. Verify impact, detect risks with evidence, and check project rules before shipping.",
+  "version": "0.1.0",
+  "publisher": "proofcode",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/waleedcodes/proofcode.git"
+  },
+  "bugs": {
+    "url": "https://github.com/waleedcodes/proofcode/issues"
+  },
+  "homepage": "https://github.com/waleedcodes/proofcode#readme",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Testing",
+    "Linters",
+    "Other"
+  ],
+  "keywords": [
+    "verification",
+    "impact-analysis",
+    "ai-code",
+    "code-review",
+    "security",
+    "git-diff"
+  ],
+  "main": "./dist/extension.js",
+  "bin": {
+    "proofcode": "./dist/cli.js"
+  },
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "proofcode-explorer",
+          "title": "ProofCode",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "proofcode-explorer": [
+        {
+          "id": "proofcode.views.overview",
+          "name": "Verification Overview",
+          "type": "tree"
+        }
+      ]
+    },
+    "commands": [
