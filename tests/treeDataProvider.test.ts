@@ -21,3 +21,30 @@ describe('ProofCodeTreeDataProvider', () => {
       summary: {
         filesChanged: 3,
         linesAdded: 50,
+        linesDeleted: 10,
+        symbolsAffected: 4,
+        apiRoutesAffected: 1,
+        testsAdded: 1,
+        testsAffected: 1,
+        highRiskCount: 0,
+        mediumRiskCount: 0,
+        lowRiskCount: 0
+      },
+      impact: {
+        changedFiles: ['/workspace/src/app.ts'],
+        changedSymbols: [],
+        affectedFiles: [],
+        affectedCallers: [],
+        affectedRoutes: [],
+        totalCallersCount: 0,
+        untestedCallersCount: 0
+      },
+      risks: [],
+      rules: [],
+      checks: {
+        typescript: { name: 'TypeScript', status: 'PASS' },
+        eslint: { name: 'ESLint', status: 'PASS' },
+        unitTests: { name: 'Unit Tests', status: 'PASS' },
+        build: { name: 'Build', status: 'PASS' }
+      }
+    };
