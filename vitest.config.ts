@@ -12,3 +12,8 @@ export default defineConfig({
     }
   },
   resolve: {
+    alias: {
+      vscode: path.resolve(__dirname, 'tests/__mocks__/vscode.ts')
+    }
+  }
+});
