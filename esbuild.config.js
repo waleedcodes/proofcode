@@ -40,3 +40,17 @@ async function main() {
   try {
     for (const config of buildConfigs) {
       if (isWatch) {
+        const ctx = await esbuild.context(config);
+        await ctx.watch();
+        console.log(`Watching ${config.entryPoints[0]} -> ${config.outfile}`);
+      } else {
+        await esbuild.build(config);
+      }
+    }
+  } catch (e) {
+    console.error(e);
+    process.exit(1);
+  }
+}
+
+main();
