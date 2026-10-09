@@ -277,3 +277,59 @@ export class ProofCodeEngine {
       unitTestsCheck: CheckResult;
     }
   ): VerificationVerdict {
+    const hasHighRisk = risks.some((r) => r.severity === 'HIGH');
+    const hasRuleViolation = rules.some((r) => r.status === 'VIOLATION');
+    const hasTestFailure = checks.unitTestsCheck.status === 'FAIL';
+    const hasTsFailure = checks.tsCheck.status === 'FAIL';
+
+    if (hasHighRisk || hasRuleViolation || hasTestFailure || hasTsFailure || score < 50) {
+      return 'BLOCKED';
+    }
+
+    if (score < 85 || risks.some((r) => r.severity === 'MEDIUM')) {
+      return 'NEEDS_REVIEW';
+    }
+
+    return 'READY_TO_SHIP';
+  }
+
+  private computeBreakageRisks(
+    impact: ImpactAnalysis,
+    risks: RiskFinding[],
+    rules: RuleResult[]
+  ): BreakageRiskItem[] {
+    const breakage: BreakageRiskItem[] = [];
+
+    // 1. Check for touched auth/session services affecting routes/callers
+    const authSymbols = impact.changedSymbols.filter(
+      (s) =>
+        /auth|session|token|user|login|permission/i.test(s.symbolName) ||
+        /auth|session/i.test(s.filePath)
+    );
+    for (const s of authSymbols) {
+      if (s.callers.length > 0) {
+        const untested = s.callers.filter((c) => !c.hasTest);
+        breakage.push({
+          id: `BRK-AUTH-${s.symbolName}`,
+          severity: 'HIGH',
+          area: 'Authentication & Session Flow',
+          trigger: `Symbol '${s.symbolName}' was modified in ${path.basename(s.filePath)}.`,
+          detail: `${s.callers.length} downstream caller(s) depend on this behavior.${
+            untested.length > 0 ? ` ${untested.length} caller(s) lack automated test coverage.` : ''
+          }`,
+          affectedCallersOrRoutes: s.callers.map((c) => `${c.callerName} (${path.basename(c.filePath)})`),
+          evidenceFile: s.filePath
+        });
+      }
+    }
+
+    // 2. Check for high risks on routes & logic (SQL injection, Missing Auth, Secrets)
+    for (const r of risks.filter((r) => r.severity === 'HIGH')) {
+      breakage.push({
+        id: `BRK-RISK-${r.id}`,
+        severity: 'HIGH',
+        area: r.category === 'authorization' ? 'API Access Control' : 'Data Security',
+        trigger: r.title,
+        detail: r.description,
+        affectedCallersOrRoutes: [path.basename(r.file)],
+        evidenceFile: r.file,
