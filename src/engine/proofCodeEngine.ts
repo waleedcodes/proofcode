@@ -221,3 +221,59 @@ export class ProofCodeEngine {
       const deduction = Math.min(30, violations * 15);
       currentScore -= deduction;
       deductions.push({
+        reason: `${violations} Project Rule Violation(s)`,
+        amount: deduction
+      });
+    }
+
+    // Deduct for Rule Warnings (5 pts each)
+    const warnings = params.rules.filter((r) => r.status === 'WARNING').length;
+    if (warnings > 0) {
+      const deduction = Math.min(10, warnings * 5);
+      currentScore -= deduction;
+      deductions.push({
+        reason: `${warnings} Project Rule Warning(s)`,
+        amount: deduction
+      });
+    }
+
+    // Deduct for untested callers (up to 15 pts)
+    if (params.untestedCallersCount > 0) {
+      const deduction = Math.min(15, params.untestedCallersCount * 3);
+      currentScore -= deduction;
+      deductions.push({
+        reason: `${params.untestedCallersCount} Affected Caller(s) without test coverage`,
+        amount: deduction
+      });
+    }
+
+    // Check failures
+    if (params.checks.tsCheck.status === 'FAIL') {
+      currentScore -= 20;
+      deductions.push({ reason: 'TypeScript compilation failure', amount: 20 });
+    }
+    if (params.checks.lintCheck.status === 'FAIL') {
+      currentScore -= 10;
+      deductions.push({ reason: 'Linter reported errors', amount: 10 });
+    }
+    if (params.checks.unitTestsCheck.status === 'FAIL') {
+      currentScore -= 25;
+      deductions.push({ reason: 'Unit test suite failed', amount: 25 });
+    }
+
+    return {
+      total: Math.max(0, Math.min(100, currentScore)),
+      deductions
+    };
+  }
+
+  private determineVerdict(
+    score: number,
+    risks: RiskFinding[],
+    rules: { status: string }[],
+    checks: {
+      tsCheck: CheckResult;
+      lintCheck: CheckResult;
+      unitTestsCheck: CheckResult;
+    }
+  ): VerificationVerdict {
