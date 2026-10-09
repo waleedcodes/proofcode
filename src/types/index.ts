@@ -81,3 +81,99 @@ export interface ImportInfo {
   specifiers: {
     name: string;
     propertyName?: string;
+    isDefault?: boolean;
+    isNamespace?: boolean;
+  }[];
+  line: number;
+}
+
+export interface ExportInfo {
+  name: string;
+  isDefault: boolean;
+  line: number;
+}
+
+export interface FileAnalysis {
+  filePath: string;
+  symbols: SymbolInfo[];
+  imports: ImportInfo[];
+  exports: ExportInfo[];
+  hasApiRoute: boolean;
+  apiRoutes: {
+    method: string;
+    path: string;
+    handlerSymbol: string;
+    line: number;
+  }[];
+}
+
+export interface AffectedCaller {
+  callerName: string;
+  filePath: string;
+  line: number;
+  hasTest: boolean;
+  testFilePath?: string;
+}
+
+export interface AffectedRoute {
+  routePath: string;
+  method: string;
+  filePath: string;
+  line: number;
+}
+
+export interface AffectedSymbol {
+  symbolName: string;
+  kind: SymbolKind;
+  filePath: string;
+  callers: AffectedCaller[];
+  isApiRoute: boolean;
+}
+
+export interface ImpactAnalysis {
+  changedFiles: string[];
+  changedSymbols: AffectedSymbol[];
+  affectedFiles: string[];
+  affectedCallers: AffectedCaller[];
+  affectedRoutes: AffectedRoute[];
+  totalCallersCount: number;
+  untestedCallersCount: number;
+}
+
+export interface EvidenceTraceStep {
+  file: string;
+  line: number;
+  symbol?: string;
+  description: string;
+}
+
+export interface RiskFinding {
+  id: string;
+  ruleId: string;
+  category: 'security' | 'authorization' | 'data_integrity' | 'reliability' | 'quality';
+  title: string;
+  severity: RiskSeverity;
+  description: string;
+  file: string;
+  line: number;
+  column?: number;
+  snippet: string;
+  evidenceTrace: EvidenceTraceStep[];
+  recommendation: string;
+}
+
+export interface ProjectRule {
+  id: string;
+  title: string;
+  description: string;
+  severity: RiskSeverity;
+  category?: string;
+  tags?: string[];
+}
+
+export interface RuleResult {
+  rule: ProjectRule;
+  status: RuleStatus;
+  detectedMessage?: string;
+  file?: string;
+  line?: number;
