@@ -362,3 +362,247 @@ export class RiskEngine {
             severity: pattern.severity,
             description: `Potential hardcoded secret or credential found in source code: ${pattern.name}.`,
             file: filePath,
+            line: lineNum,
+            snippet: getSnippet(lineNum),
+            evidenceTrace: [
+              {
+                file: filePath,
+                line: lineNum,
+                description: `Sensitive literal matched pattern for ${pattern.name}`
+              }
+            ],
+            recommendation:
+              'Never commit credentials to source control. Move the secret to environment variables or secret manager.'
+          });
+          break;
+        }
+      }
+    });
+
+    return findings;
+  }
+
+  private static checkApiRouteAuthorization(
+    filePath: string,
+    sourceFile: ts.SourceFile,
+    sourceText: string,
+    isLineChanged: (line: number) => boolean,
+    getSnippet: (line: number) => string
+  ): RiskFinding[] {
+    const findings: RiskFinding[] = [];
+
+    // Check if the file imports or uses actual auth utilities (stripping comments)
+    const codeWithoutComments = sourceText.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '');
+    const hasAuthCheck =
+      /\b(auth|session|getServerSession|verifyToken|jwt\.verify|req\.user|req\.session|requireAuth|authenticate|useSession)\b/i.test(
+        codeWithoutComments
+      );
+
+    // Look for route handler functions
+    const visit = (node: ts.Node) => {
+      let isHandler = false;
+      let handlerName = '';
+
+      if (ts.isFunctionDeclaration(node) && node.name) {
+        handlerName = node.name.text;
+        isHandler = /^(GET|POST|PUT|DELETE|PATCH)$/i.test(handlerName) || handlerName === 'handler';
+      } else if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
+        handlerName = node.name.text;
+        isHandler = /^(GET|POST|PUT|DELETE|PATCH)$/i.test(handlerName);
+      }
+
+      if (isHandler && node) {
+        const handlerText = node.getText(sourceFile);
+        const codeInHandler = handlerText.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '');
+
+        const hasDbQuery =
+          /\b(db|prisma|order|user|account|payment)(\.[a-zA-Z0-9_$]+)*\.(find|create|update|delete|query|findUnique|findMany)\b/i.test(
+            codeInHandler
+          );
+
+        const hasLocalAuth =
+          /\b(auth|session|getServerSession|req\.user|verifyToken|jwt|requireAuth)\b/i.test(
+            codeInHandler
+          );
+
+        if (hasDbQuery && !hasLocalAuth && !hasAuthCheck) {
+          const lc = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+          const line = lc.line + 1;
+
+          if (isLineChanged(line)) {
+            const trace: EvidenceTraceStep[] = [
+              {
+                file: filePath,
+                line,
+                symbol: handlerName,
+                description: `Route handler ${handlerName} receives client request`
+              },
+              {
+                file: filePath,
+                line,
+                description: 'Handler performs database query / resource mutation'
+              },
+              {
+                file: filePath,
+                line,
+                description: 'NO authentication/authorization or session ownership check found in handler body'
+              }
+            ];
+
+            findings.push({
+              id: `PC-AUTH-${filePath}-${line}`,
+              ruleId: 'PC-AUTH-001',
+              category: 'authorization',
+              title: `Missing Authorization Check in API Route (${handlerName})`,
+              severity: 'HIGH',
+              description: `API route handler '${handlerName}' accesses database resources without verifying user authentication or permissions.`,
+              file: filePath,
+              line,
+              snippet: getSnippet(line),
+              evidenceTrace: trace,
+              recommendation:
+                'Verify user identity and ownership before querying or modifying sensitive records (e.g. const session = await auth()).'
+            });
+          }
+        }
+      }
+
+      ts.forEachChild(node, visit);
+    };
+
+    ts.forEachChild(sourceFile, visit);
+    return findings;
+  }
+
+  private static checkUnhandledNullDbResult(
+    node: ts.VariableDeclaration,
+    sourceFile: ts.SourceFile,
+    filePath: string,
+    isLineChanged: (line: number) => boolean,
+    getSnippet: (line: number) => string,
+    findings: RiskFinding[]
+  ): void {
+    if (!ts.isIdentifier(node.name) || !node.initializer) return;
+    const varName = node.name.text;
+    const initText = node.initializer.getText(sourceFile);
+
+    const isSingleEntityQuery =
+      /\b(db|prisma|repository|repo|order|user|account)(\.[a-zA-Z0-9_$]+)*\.(findUnique|findOne|findById)\b/i.test(
+        initText
+      );
+
+    if (!isSingleEntityQuery) return;
+
+    let scopeNode: ts.Node | undefined = node.parent;
+    while (scopeNode && !ts.isBlock(scopeNode) && !ts.isSourceFile(scopeNode)) {
+      scopeNode = scopeNode.parent;
+    }
+    if (!scopeNode) return;
+
+    const statements = ts.isBlock(scopeNode)
+      ? scopeNode.statements
+      : (scopeNode as ts.SourceFile).statements;
+
+    const varDeclIndex = statements.findIndex((s) => s.getText(sourceFile).includes(varName));
+    if (varDeclIndex === -1) return;
+
+    let hasNullCheck = false;
+    let unsafeDereference: { line: number; text: string } | null = null;
+
+    for (let i = varDeclIndex + 1; i < statements.length; i++) {
+      const stmt = statements[i];
+
+      if (
+        ts.isIfStatement(stmt) &&
+        (new RegExp(`!\\s*${varName}\\b`).test(stmt.expression.getText(sourceFile)) ||
+          new RegExp(`${varName}\\s*(===|==)\\s*(null|undefined)`).test(
+            stmt.expression.getText(sourceFile)
+          ))
+      ) {
+        hasNullCheck = true;
+        break;
+      }
+
+      const checkNode = (n: ts.Node) => {
+        if (hasNullCheck || unsafeDereference) return;
+        if (ts.isPropertyAccessExpression(n)) {
+          if (
+            ts.isIdentifier(n.expression) &&
+            n.expression.text === varName &&
+            !n.questionDotToken
+          ) {
+            let p: ts.Node | undefined = n.parent;
+            let guarded = false;
+            while (p && p !== stmt) {
+              if (
+                ts.isBinaryExpression(p) &&
+                p.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken &&
+                p.left.getText(sourceFile).includes(varName)
+              ) {
+                guarded = true;
+                break;
+              }
+              p = p.parent;
+            }
+
+            if (!guarded) {
+              const lc = sourceFile.getLineAndCharacterOfPosition(n.getStart(sourceFile));
+              unsafeDereference = {
+                line: lc.line + 1,
+                text: n.getText(sourceFile)
+              };
+            }
+          }
+        }
+        ts.forEachChild(n, checkNode);
+      };
+
+      checkNode(stmt);
+      if (unsafeDereference) break;
+    }
+
+    if (!hasNullCheck && unsafeDereference) {
+      const declLc = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+      const declLine = declLc.line + 1;
+      const refLine = (unsafeDereference as { line: number; text: string }).line;
+      const refText = (unsafeDereference as { line: number; text: string }).text;
+
+      if (isLineChanged(declLine) || isLineChanged(refLine)) {
+        findings.push({
+          id: `PC-NULL-${filePath}-${refLine}`,
+          ruleId: 'PC-DATA-001',
+          category: 'reliability',
+          title: `Unhandled Null/Undefined Database Result (${varName})`,
+          severity: 'MEDIUM',
+          description: `Database query result '${varName}' is dereferenced as '${refText}' without verifying if the record exists, risking runtime TypeError if not found.`,
+          file: filePath,
+          line: refLine,
+          snippet: getSnippet(refLine),
+          evidenceTrace: [
+            {
+              file: filePath,
+              line: declLine,
+              description: `Record looked up via ${initText}`
+            },
+            {
+              file: filePath,
+              line: refLine,
+              description: `Property accessed directly via '${refText}' without null guard (e.g. if (!${varName}) or ${varName}?.${refText.split('.')[1] || ''})`
+            }
+          ],
+          recommendation: `Check if '${varName}' is null before accessing properties, or use optional chaining (${varName}?.${refText.split('.')[1] || ''}).`
+        });
+      }
+    }
+  }
+
+  public static isTestFile(filePath: string): boolean {
+    const normalized = filePath.replace(/\\/g, '/');
+    return (
+      normalized.includes('.test.') ||
+      normalized.includes('.spec.') ||
+      normalized.includes('/__tests__/') ||
+      normalized.includes('/tests/')
+    );
+  }
+}
