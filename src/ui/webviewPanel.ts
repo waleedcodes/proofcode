@@ -1231,3 +1231,141 @@ export class ProofCodeWebviewPanel {
             <th>Check Name</th>
             <th>Status</th>
             <th>Details</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${
+            checks
+              ? `
+            <tr>
+              <td><strong>${checks.typescript.name}</strong></td>
+              <td><span class="severity-tag ${checks.typescript.status === 'PASS' ? 'low' : 'high'}">${checks.typescript.status}</span></td>
+              <td>${checks.typescript.message || 'Pass'}</td>
+            </tr>
+            <tr>
+              <td><strong>${checks.eslint.name}</strong></td>
+              <td><span class="severity-tag ${checks.eslint.status === 'PASS' ? 'low' : 'medium'}">${checks.eslint.status}</span></td>
+              <td>${checks.eslint.message || 'Pass'}</td>
+            </tr>
+            <tr>
+              <td><strong>${checks.unitTests.name}</strong></td>
+              <td><span class="severity-tag ${checks.unitTests.status === 'PASS' ? 'low' : checks.unitTests.status === 'SKIPPED' ? 'medium' : 'high'}">${checks.unitTests.status}</span></td>
+              <td>${checks.unitTests.message || 'Pass'}</td>
+            </tr>
+            <tr>
+              <td><strong>${checks.build.name}</strong></td>
+              <td><span class="severity-tag ${checks.build.status === 'PASS' ? 'low' : checks.build.status === 'SKIPPED' ? 'medium' : 'high'}">${checks.build.status}</span></td>
+              <td>${checks.build.message || 'Pass'}</td>
+            </tr>
+          `
+              : '<tr><td colspan="3">No live checks configured yet.</td></tr>'
+          }
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <script>
+    const vscode = acquireVsCodeApi();
+
+    // Tab switcher
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+        tab.classList.add('active');
+        const targetId = tab.getAttribute('data-tab');
+        const targetPane = document.getElementById(targetId);
+        if (targetPane) targetPane.classList.add('active');
+      });
+    });
+
+    // Actions
+    document.getElementById('btn-verify')?.addEventListener('click', () => {
+      vscode.postMessage({ type: 'verify' });
+    });
+
+    document.getElementById('btn-export')?.addEventListener('click', () => {
+      vscode.postMessage({ type: 'exportMarkdown' });
+    });
+
+    document.getElementById('btn-init-rules')?.addEventListener('click', () => {
+      vscode.postMessage({ type: 'initRules' });
+    });
+
+    document.querySelectorAll('.open-evidence-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const file = btn.getAttribute('data-file');
+        const line = parseInt(btn.getAttribute('data-line') || '1', 10);
+        vscode.postMessage({ type: 'openEvidence', file, line });
+      });
+    });
+
+    // Live Impact Blast Graph Search & Filter
+    const searchInput = document.getElementById('impact-search');
+    let activeFilter = 'all';
+
+    function applyImpactFilters() {
+      const query = (searchInput ? searchInput.value : '').toLowerCase().trim();
+      const symbolCards = document.querySelectorAll('.blast-symbol-card');
+
+      symbolCards.forEach(card => {
+        const symName = card.getAttribute('data-symbol') || '';
+        const fileName = card.getAttribute('data-file') || '';
+        const untestedCount = parseInt(card.getAttribute('data-untested') || '0', 10);
+        const callerNodes = card.querySelectorAll('.blast-caller-node');
+
+        let matchesSearch = !query || symName.includes(query) || fileName.includes(query);
+        let visibleCallersCount = 0;
+
+        callerNodes.forEach(node => {
+          const callerName = node.getAttribute('data-caller') || '';
+          const isTested = node.getAttribute('data-tested') === 'true';
+
+          let callerMatchSearch = !query || callerName.includes(query) || matchesSearch;
+          let callerMatchFilter = activeFilter === 'all' || (activeFilter === 'untested' && !isTested);
+
+          if (callerMatchSearch && callerMatchFilter) {
+            node.style.display = 'flex';
+            visibleCallersCount++;
+          } else {
+            node.style.display = 'none';
+          }
+        });
+
+        const showCard = (activeFilter === 'all' && (matchesSearch || visibleCallersCount > 0)) ||
+                         (activeFilter === 'untested' && untestedCount > 0 && (matchesSearch || visibleCallersCount > 0));
+
+        card.style.display = showCard ? 'block' : 'none';
+      });
+
+      const routesCard = document.querySelector('.routes-section-card');
+      if (routesCard) {
+        routesCard.style.display = (activeFilter === 'all' || activeFilter === 'routes') ? 'block' : 'none';
+      }
+    }
+
+    searchInput?.addEventListener('input', applyImpactFilters);
+
+    document.querySelectorAll('.filter-pill').forEach(pill => {
+      pill.addEventListener('click', () => {
+        document.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
+        pill.classList.add('active');
+        activeFilter = pill.getAttribute('data-filter') || 'all';
+        applyImpactFilters();
+      });
+    });
+  </script>
+</body>
+</html>`;
+  }
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
