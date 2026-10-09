@@ -289,3 +289,76 @@ export class RiskEngine {
         sourceFile,
         sourceText,
         isLineChanged,
+        getSnippet
+      );
+      findings.push(...authFindings);
+    }
+
+    // Deduplicate findings by ID
+    const uniqueMap = new Map<string, RiskFinding>();
+    for (const f of findings) {
+      uniqueMap.set(f.id, f);
+    }
+
+    return Array.from(uniqueMap.values());
+  }
+
+  private static checkHardcodedSecrets(
+    filePath: string,
+    sourceText: string,
+    isLineChanged: (line: number) => boolean,
+    getSnippet: (line: number) => string
+  ): RiskFinding[] {
+    const findings: RiskFinding[] = [];
+    const lines = sourceText.split('\n');
+
+    const patterns = [
+      {
+        regex: /(?:AKIA[0-9A-Z]{16})/,
+        name: 'AWS Access Key ID',
+        ruleId: 'PC-SEC-002',
+        severity: 'HIGH' as RiskSeverity
+      },
+      {
+        regex: /-----BEGIN(?:[A-Z\s]+)?PRIVATE KEY-----/,
+        name: 'Private Encryption Key',
+        ruleId: 'PC-SEC-002',
+        severity: 'HIGH' as RiskSeverity
+      },
+      {
+        regex: /(?:ghp_[a-zA-Z0-9]{36}|github_pat_[a-zA-Z0-9_]{50,})/,
+        name: 'GitHub Personal Access Token',
+        ruleId: 'PC-SEC-002',
+        severity: 'HIGH' as RiskSeverity
+      },
+      {
+        regex: /(?:sk-[a-zA-Z0-9]{32,})/,
+        name: 'OpenAI API Secret Key',
+        ruleId: 'PC-SEC-002',
+        severity: 'HIGH' as RiskSeverity
+      },
+      {
+        regex: /(?:password|apiKey|api_key|client_secret|private_key)\s*[:=]\s*["']([A-Za-z0-9+/=_\-!@#$%^&*]{16,})["']/i,
+        name: 'Hardcoded Secret Credential',
+        ruleId: 'PC-SEC-002',
+        severity: 'HIGH' as RiskSeverity
+      }
+    ];
+
+    lines.forEach((lineText, idx) => {
+      const lineNum = idx + 1;
+      if (!isLineChanged(lineNum)) return;
+
+      // Skip process.env or commented-out lines
+      if (lineText.includes('process.env.') || /^\s*\/\//.test(lineText)) return;
+
+      for (const pattern of patterns) {
+        if (pattern.regex.test(lineText)) {
+          findings.push({
+            id: `PC-SECRET-${filePath}-${lineNum}`,
+            ruleId: pattern.ruleId,
+            category: 'security',
+            title: `Hardcoded Secret Detected (${pattern.name})`,
+            severity: pattern.severity,
+            description: `Potential hardcoded secret or credential found in source code: ${pattern.name}.`,
+            file: filePath,
