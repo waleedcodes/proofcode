@@ -74,3 +74,29 @@ Options:
 
     // Write artifact report if .proofcode dir exists
     const proofcodeDir = path.join(cwd, '.proofcode');
+    if (fs.existsSync(proofcodeDir)) {
+      fs.writeFileSync(
+        path.join(proofcodeDir, 'report.md'),
+        ReportFormatter.toMarkdown(report),
+        'utf8'
+      );
+      fs.writeFileSync(
+        path.join(proofcodeDir, 'report.json'),
+        ReportFormatter.toJson(report),
+        'utf8'
+      );
+    }
+
+    // Exit code: 0 if ready or needs review, 1 if blocked
+    if (report.verdict === 'BLOCKED') {
+      process.exit(1);
+    } else {
+      process.exit(0);
+    }
+  } catch (err: unknown) {
+    console.error(`Verification failed: ${(err as Error).message}`);
+    process.exit(1);
+  }
+}
+
+runCli();
