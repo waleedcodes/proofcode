@@ -176,3 +176,48 @@ export class ProofCodeEngine {
       tsCheck: CheckResult;
       lintCheck: CheckResult;
       unitTestsCheck: CheckResult;
+      buildCheck: CheckResult;
+    };
+  }): VerificationScore {
+    let currentScore = 100;
+    const deductions: VerificationScore['deductions'] = [];
+
+    // Deduct for High Risks (15 pts each, max 45)
+    const highRisks = params.risks.filter((r) => r.severity === 'HIGH').length;
+    if (highRisks > 0) {
+      const deduction = Math.min(45, highRisks * 15);
+      currentScore -= deduction;
+      deductions.push({
+        reason: `${highRisks} High Severity Risk(s) detected`,
+        amount: deduction
+      });
+    }
+
+    // Deduct for Medium Risks (7 pts each, max 28)
+    const medRisks = params.risks.filter((r) => r.severity === 'MEDIUM').length;
+    if (medRisks > 0) {
+      const deduction = Math.min(28, medRisks * 7);
+      currentScore -= deduction;
+      deductions.push({
+        reason: `${medRisks} Medium Severity Risk(s) detected`,
+        amount: deduction
+      });
+    }
+
+    // Deduct for Low Risks (2 pts each, max 10)
+    const lowRisks = params.risks.filter((r) => r.severity === 'LOW').length;
+    if (lowRisks > 0) {
+      const deduction = Math.min(10, lowRisks * 2);
+      currentScore -= deduction;
+      deductions.push({
+        reason: `${lowRisks} Low Severity Risk(s) detected`,
+        amount: deduction
+      });
+    }
+
+    // Deduct for Project Rule Violations (15 pts each)
+    const violations = params.rules.filter((r) => r.status === 'VIOLATION').length;
+    if (violations > 0) {
+      const deduction = Math.min(30, violations * 15);
+      currentScore -= deduction;
+      deductions.push({
