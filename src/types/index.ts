@@ -177,3 +177,63 @@ export interface RuleResult {
   detectedMessage?: string;
   file?: string;
   line?: number;
+  evidenceSnippet?: string;
+}
+
+export interface CheckResult {
+  name: string;
+  status: CheckStatus;
+  durationMs?: number;
+  message?: string;
+  details?: string;
+}
+
+export interface VerificationScore {
+  total: number;
+  deductions: {
+    reason: string;
+    amount: number;
+  }[];
+}
+
+export interface BreakageRiskItem {
+  id: string;
+  severity: RiskSeverity;
+  area: string;
+  trigger: string;
+  detail: string;
+  affectedCallersOrRoutes: string[];
+  evidenceFile?: string;
+  evidenceLine?: number;
+}
+
+export interface VerificationReport {
+  timestamp: string;
+  repoRoot: string;
+  branch?: string;
+  commitHash?: string;
+  score: VerificationScore;
+  verdict: VerificationVerdict;
+  summary: {
+    filesChanged: number;
+    linesAdded: number;
+    linesDeleted: number;
+    symbolsAffected: number;
+    apiRoutesAffected: number;
+    testsAdded: number;
+    testsAffected: number;
+    highRiskCount: number;
+    mediumRiskCount: number;
+    lowRiskCount: number;
+  };
+  impact: ImpactAnalysis;
+  risks: RiskFinding[];
+  breakageRisks?: BreakageRiskItem[];
+  rules: RuleResult[];
+  checks: {
+    typescript: CheckResult;
+    eslint: CheckResult;
+    unitTests: CheckResult;
+    build: CheckResult;
+  };
+}
