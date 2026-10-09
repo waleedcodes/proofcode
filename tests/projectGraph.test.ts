@@ -17,3 +17,26 @@ describe('ProjectGraph', () => {
 
   it('should map imports and compute reverse dependents', async () => {
     // File A: userService.ts
+    const userPath = path.join(tempDir, 'userService.ts');
+    fs.writeFileSync(
+      userPath,
+      `export function getUser(id: string) { return { id }; }`,
+      'utf8'
+    );
+
+    // File B: orderController.ts imports userService
+    const orderPath = path.join(tempDir, 'orderController.ts');
+    fs.writeFileSync(
+      orderPath,
+      `import { getUser } from './userService';
+export function handleOrder(userId: string) {
+  const user = getUser(userId);
+  return user;
+}`,
+      'utf8'
+    );
+
+    const graph = new ProjectGraph(tempDir);
+    await graph.buildGraph([userPath, orderPath]);
+
+    const dependents = graph.getDependents(userPath);
