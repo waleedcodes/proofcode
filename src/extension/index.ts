@@ -79,120 +79,128 @@ export function activate(context: vscode.ExtensionContext): void {
     const runLiveTests = config.get<boolean>('runTestsOnVerify', false);
     const rulesFilePath = config.get<string>('rulesFilePath', '.proofcode/rules.md');
 
-    return vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Notification,
-        title: 'ProofCode: Verifying change impact and risks...',
-        cancellable: false
-      },
-      async () => {
-        try {
-          const engine = new ProofCodeEngine(root);
-          const report = await engine.verify({
-            runLiveTests,
-            rulesFilePath
-          });
+    const execute = async (): Promise<VerificationReport | null> => {
+      try {
+        const engine = new ProofCodeEngine(root);
+        const report = await engine.verify({
+          runLiveTests,
+          rulesFilePath
+        });
 
-          latestReport = report;
-          treeDataProvider.setReport(report);
+        latestReport = report;
+        treeDataProvider.setReport(report);
 
-          // Update Diagnostics in Problems panel
-          diagnosticCollection.clear();
-          const fileDiagnosticsMap = new Map<string, vscode.Diagnostic[]>();
+        // Update Diagnostics in Problems panel
+        diagnosticCollection.clear();
+        const fileDiagnosticsMap = new Map<string, vscode.Diagnostic[]>();
 
-          for (const risk of report.risks) {
-            const lineIdx = Math.max(0, risk.line - 1);
-            const colIdx = Math.max(0, (risk.column || 1) - 1);
-            const range = new vscode.Range(lineIdx, colIdx, lineIdx, colIdx + 40);
-            const severity =
-              risk.severity === 'HIGH'
-                ? vscode.DiagnosticSeverity.Error
-                : risk.severity === 'MEDIUM'
-                ? vscode.DiagnosticSeverity.Warning
-                : vscode.DiagnosticSeverity.Information;
+        for (const risk of report.risks) {
+          const lineIdx = Math.max(0, risk.line - 1);
+          const colIdx = Math.max(0, (risk.column || 1) - 1);
+          const range = new vscode.Range(lineIdx, colIdx, lineIdx, colIdx + 40);
+          const severity =
+            risk.severity === 'HIGH'
+              ? vscode.DiagnosticSeverity.Error
+              : risk.severity === 'MEDIUM'
+              ? vscode.DiagnosticSeverity.Warning
+              : vscode.DiagnosticSeverity.Information;
 
+          const diag = new vscode.Diagnostic(
+            range,
+            `[${risk.ruleId}] ${risk.title}: ${risk.description}`,
+            severity
+          );
+          diag.source = 'ProofCode';
+          diag.code = risk.ruleId;
+
+          const list = fileDiagnosticsMap.get(risk.file) || [];
+          list.push(diag);
+          fileDiagnosticsMap.set(risk.file, list);
+        }
+
+        for (const rule of report.rules) {
+          if (rule.status === 'VIOLATION' && rule.file) {
+            const lineIdx = Math.max(0, (rule.line || 1) - 1);
+            const range = new vscode.Range(lineIdx, 0, lineIdx, 40);
             const diag = new vscode.Diagnostic(
               range,
-              `[${risk.ruleId}] ${risk.title}: ${risk.description}`,
-              severity
+              `[${rule.rule.id}] Rule Violation: "${rule.rule.title}" - ${rule.detectedMessage || ''}`,
+              vscode.DiagnosticSeverity.Error
             );
             diag.source = 'ProofCode';
-            diag.code = risk.ruleId;
+            diag.code = rule.rule.id;
 
-            const list = fileDiagnosticsMap.get(risk.file) || [];
+            const list = fileDiagnosticsMap.get(rule.file) || [];
             list.push(diag);
-            fileDiagnosticsMap.set(risk.file, list);
+            fileDiagnosticsMap.set(rule.file, list);
           }
+        }
 
-          for (const rule of report.rules) {
-            if (rule.status === 'VIOLATION' && rule.file) {
-              const lineIdx = Math.max(0, (rule.line || 1) - 1);
-              const range = new vscode.Range(lineIdx, 0, lineIdx, 40);
-              const diag = new vscode.Diagnostic(
-                range,
-                `[${rule.rule.id}] Rule Violation: "${rule.rule.title}" - ${rule.detectedMessage || ''}`,
-                vscode.DiagnosticSeverity.Error
-              );
-              diag.source = 'ProofCode';
-              diag.code = rule.rule.id;
+        for (const [filePath, diags] of fileDiagnosticsMap.entries()) {
+          const fullPath = path.isAbsolute(filePath) ? filePath : path.resolve(root, filePath);
+          diagnosticCollection.set(vscode.Uri.file(fullPath), diags);
+        }
 
-              const list = fileDiagnosticsMap.get(rule.file) || [];
-              list.push(diag);
-              fileDiagnosticsMap.set(rule.file, list);
-            }
+        // Update CodeLens annotations
+        codeLensProvider.setReport(report);
+
+        // Update Status Bar
+        const score = report.score.total;
+        const risksCount = report.risks.length;
+        const icon =
+          report.verdict === 'READY_TO_SHIP'
+            ? '$(pass)'
+            : report.verdict === 'NEEDS_REVIEW'
+            ? '$(warning)'
+            : '$(error)';
+
+        statusBarItem.text = `${icon} ProofCode: ${score}% (${risksCount} risks)`;
+        statusBarItem.tooltip = `Verdict: ${report.verdict} | ${report.summary.filesChanged} files changed, ${report.summary.symbolsAffected} symbols affected.`;
+
+        // If webview is open, refresh it
+        if (ProofCodeWebviewPanel.currentPanel) {
+          ProofCodeWebviewPanel.currentPanel.setReport(report);
+        }
+
+        if (!quiet) {
+          if (report.verdict === 'READY_TO_SHIP') {
+            vscode.window.showInformationMessage(
+              `ProofCode: Verification Passed (${score}%). Ready to ship!`
+            );
+          } else if (report.verdict === 'NEEDS_REVIEW') {
+            vscode.window.showWarningMessage(
+              `ProofCode: Score ${score}%. ${report.summary.mediumRiskCount} warning(s) need review.`
+            );
+          } else {
+            vscode.window.showErrorMessage(
+              `ProofCode: BLOCKED (${score}%). ${report.summary.highRiskCount} high risk(s) or rule violations detected.`
+            );
           }
+        }
 
-          for (const [filePath, diags] of fileDiagnosticsMap.entries()) {
-            const fullPath = path.isAbsolute(filePath) ? filePath : path.resolve(root, filePath);
-            diagnosticCollection.set(vscode.Uri.file(fullPath), diags);
-          }
-
-          // Update CodeLens annotations
-          codeLensProvider.setReport(report);
-
-          // Update Status Bar
-          const score = report.score.total;
-          const risksCount = report.risks.length;
-          const icon =
-            report.verdict === 'READY_TO_SHIP'
-              ? '$(pass)'
-              : report.verdict === 'NEEDS_REVIEW'
-              ? '$(warning)'
-              : '$(error)';
-
-          statusBarItem.text = `${icon} ProofCode: ${score}% (${risksCount} risks)`;
-          statusBarItem.tooltip = `Verdict: ${report.verdict} | ${report.summary.filesChanged} files changed, ${report.summary.symbolsAffected} symbols affected.`;
-
-          // If webview is open, refresh it
-          if (ProofCodeWebviewPanel.currentPanel) {
-            ProofCodeWebviewPanel.currentPanel.setReport(report);
-          }
-
-          if (!quiet) {
-            if (report.verdict === 'READY_TO_SHIP') {
-              vscode.window.showInformationMessage(
-                `ProofCode: Verification Passed (${score}%). Ready to ship!`
-              );
-            } else if (report.verdict === 'NEEDS_REVIEW') {
-              vscode.window.showWarningMessage(
-                `ProofCode: Score ${score}%. ${report.summary.mediumRiskCount} warning(s) need review.`
-              );
-            } else {
-              vscode.window.showErrorMessage(
-                `ProofCode: BLOCKED (${score}%). ${report.summary.highRiskCount} high risk(s) or rule violations detected.`
-              );
-            }
-          }
-
-          return report;
-        } catch (err: unknown) {
+        return report;
+      } catch (err: unknown) {
+        if (!quiet) {
           vscode.window.showErrorMessage(
             `ProofCode Verification Error: ${(err as Error).message}`
           );
-          return null;
         }
+        return null;
       }
-    );
+    };
+
+    if (!quiet) {
+      return vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: 'ProofCode: Verifying change impact and risks...',
+          cancellable: false
+        },
+        execute
+      );
+    } else {
+      return execute();
+    }
   };
 
   // Commands
@@ -292,8 +300,10 @@ export function activate(context: vscode.ExtensionContext): void {
     onSaveDisposable
   );
 
-  // Initial silent run
-  runVerification(true).catch(() => {});
+  // Defer initial background verification after activation so extension startup completes in <15ms
+  setTimeout(() => {
+    runVerification(true).catch(() => {});
+  }, 1000);
 }
 
 export function deactivate(): void {

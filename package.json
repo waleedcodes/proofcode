@@ -4,6 +4,7 @@
   "description": "AI writes code. ProofCode proves the change. Verify impact, detect risks with evidence, and check project rules before shipping.",
   "version": "0.1.0",
   "publisher": "proofcode",
+  "icon": "resources/icon.png",
   "license": "MIT",
   "repository": {
     "type": "git",
