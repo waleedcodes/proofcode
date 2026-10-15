@@ -5,12 +5,25 @@ const isWatch = process.argv.includes('--watch');
 
 /** @type {esbuild.BuildOptions[]} */
 const buildConfigs = [
-  // VS Code Extension Bundle
+  // Core Verification Engine (Heavy bundle with TypeScript compiler, lazy-loaded on demand)
+  {
+    entryPoints: ['src/engine/proofCodeEngine.ts'],
+    bundle: true,
+    outfile: 'dist/proofCodeEngine.js',
+    external: ['vscode'],
+    format: 'cjs',
+    platform: 'node',
+    target: 'node18',
+    sourcemap: !isProduction,
+    minify: isProduction,
+    logLevel: 'info'
+  },
+  // VS Code Extension Entrypoint (Ultra-lightweight ~50KB bundle for sub-15ms activation)
   {
     entryPoints: ['src/extension/index.ts'],
     bundle: true,
     outfile: 'dist/extension.js',
-    external: ['vscode'],
+    external: ['vscode', './proofCodeEngine'],
     format: 'cjs',
     platform: 'node',
     target: 'node18',

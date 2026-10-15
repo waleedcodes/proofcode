@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { ProofCodeEngine } from '../engine/proofCodeEngine';
+import type { ProofCodeEngine as ProofCodeEngineType } from '../engine/proofCodeEngine';
 import { ReportFormatter } from '../engine/reportFormatter';
 import { ProjectRulesEngine } from '../rules/projectRulesEngine';
 import { VerificationReport } from '../types';
@@ -9,6 +9,11 @@ import { ProofCodeCodeActionProvider } from '../ui/codeActionProvider';
 import { ProofCodeCodeLensProvider } from '../ui/codeLensProvider';
 import { ProofCodeTreeDataProvider } from '../ui/treeDataProvider';
 import { ProofCodeWebviewPanel } from '../ui/webviewPanel';
+
+function getProofCodeEngine(): typeof ProofCodeEngineType {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  return require('./proofCodeEngine').ProofCodeEngine;
+}
 
 let treeDataProvider: ProofCodeTreeDataProvider;
 let statusBarItem: vscode.StatusBarItem;
@@ -81,6 +86,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
     const execute = async (): Promise<VerificationReport | null> => {
       try {
+        const ProofCodeEngine = getProofCodeEngine();
         const engine = new ProofCodeEngine(root);
         const report = await engine.verify({
           runLiveTests,

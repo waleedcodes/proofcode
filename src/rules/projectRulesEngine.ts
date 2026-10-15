@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { ProjectGraph } from '../graph/projectGraph';
+import type { ProjectGraph } from '../graph/projectGraph';
 import { FileDiff, ProjectRule, RuleResult } from '../types';
 
 export class ProjectRulesEngine {
