@@ -109,8 +109,17 @@ npm install -g proofcode
 # Verify working tree changes against Git HEAD
 proofcode verify
 
+# Verify a specific subfolder, monorepo package, or demo app
+proofcode verify ./examples/demo-app
+
 # Verify only staged git changes (ideal for pre-commit hooks)
 proofcode verify --staged
+
+# CI/CD Mode: Emit inline GitHub Actions annotations (::error, ::warning) and Job Summary
+proofcode verify --ci
+
+# Strict Mode: Fail CI build (exit code 1) if score < 75% or needs review
+proofcode verify --ci --strict
 
 # Run full live test checks and compiler validation alongside static analysis
 proofcode verify --live
@@ -122,7 +131,7 @@ proofcode verify --markdown
 proofcode verify --json
 
 # Initialize a default rules template
-proofcode init
+proofcode init ./my-project
 ```
 
 ---

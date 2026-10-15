@@ -3,17 +3,61 @@ import * as path from 'node:path';
 import { ProofCodeEngine } from './engine/proofCodeEngine';
 import { ReportFormatter } from './engine/reportFormatter';
 import { ProjectRulesEngine } from './rules/projectRulesEngine';
+import { VerificationReport } from './types';
 
-async function runCli(): Promise<void> {
+export function emitGitHubAnnotations(report: VerificationReport, baseDir: string): void {
+  for (const risk of report.risks) {
+    const relFile = path.isAbsolute(risk.file)
+      ? path.relative(baseDir, risk.file)
+      : risk.file;
+    const level =
+      risk.severity === 'HIGH'
+        ? 'error'
+        : risk.severity === 'MEDIUM'
+        ? 'warning'
+        : 'notice';
+    const title = `[${risk.ruleId}] ${risk.title}`.replace(/[\r\n]+/g, ' ');
+    const msg = `${risk.description}${risk.snippet ? ` | Snippet: ${risk.snippet.trim()}` : ''}`.replace(/[\r\n]+/g, ' ');
+    console.log(`::${level} file=${relFile},line=${risk.line},title=${title}::${msg}`);
+  }
+
+  for (const rule of report.rules) {
+    if (rule.status === 'VIOLATION') {
+      const relFile = rule.file
+        ? path.isAbsolute(rule.file)
+          ? path.relative(baseDir, rule.file)
+          : rule.file
+        : '.proofcode/rules.md';
+      const title = `Rule Violation: ${rule.rule.title}`.replace(/[\r\n]+/g, ' ');
+      const msg = `${rule.detectedMessage || rule.rule.description}`.replace(/[\r\n]+/g, ' ');
+      console.log(`::error file=${relFile},line=${rule.line || 1},title=${title}::${msg}`);
+    }
+  }
+
+  // Write GitHub Actions Step Summary if in CI environment
+  if (process.env.GITHUB_STEP_SUMMARY) {
+    try {
+      fs.appendFileSync(
+        process.env.GITHUB_STEP_SUMMARY,
+        ReportFormatter.toMarkdown(report) + '\n',
+        'utf8'
+      );
+    } catch {
+      // Ignore write errors to step summary
+    }
+  }
+}
+
+export async function runCli(): Promise<void> {
   const args = process.argv.slice(2);
-  const cwd = process.cwd();
 
   const isHelp = args.includes('--help') || args.includes('-h');
   const isJson = args.includes('--json');
   const isMarkdown = args.includes('--markdown') || args.includes('-m');
   const isStaged = args.includes('--staged');
   const isLive = args.includes('--live');
-  const command = args[0] && !args[0].startsWith('-') ? args[0] : 'verify';
+  const isCi = args.includes('--ci') || args.includes('--github-actions');
+  const isStrict = args.includes('--strict');
 
   if (isHelp) {
     console.log(`
@@ -21,34 +65,70 @@ ProofCode CLI - Code Change Verification
 AI writes code. ProofCode proves the change.
 
 Usage:
-  proofcode [command] [options]
+  proofcode [command] [target-directory] [options]
 
 Commands:
-  verify       Verify working tree or git diff (default)
-  init         Initialize default .proofcode/rules.md in project
-  rules        List and check configured project rules
+  verify [dir]   Verify working tree or git diff (default: current directory)
+  init [dir]     Initialize default .proofcode/rules.md in target project
+  rules [dir]    List and check configured project rules
 
 Options:
-  --staged     Verify only staged git changes
-  --live       Run full live test and build checks (npm test, tsc, etc.)
-  --json       Output report as structured JSON
-  --markdown   Output report as formatted GitHub Markdown
-  --help, -h   Show this help message
+  --staged       Verify only staged git changes (git diff --cached)
+  --live         Run full live test and build checks (npm test, tsc, etc.)
+  --ci           Output GitHub Actions annotations (::error, ::warning) and Step Summary
+  --strict       Fail with exit code 1 if score < 75% or needs review
+  --json         Output report as structured JSON
+  --markdown, -m Output report as formatted GitHub Markdown
+  --help, -h     Show this help message
+
+Examples:
+  proofcode verify
+  proofcode verify ./examples/demo-app
+  proofcode verify --staged --ci
+  proofcode verify ./apps/api --live --markdown
 `);
     process.exit(0);
   }
 
+  // Parse positional arguments for command and target directory
+  const nonFlagArgs = args.filter((a) => !a.startsWith('-'));
+  let command = 'verify';
+  let targetPath = process.cwd();
+
+  if (nonFlagArgs.length > 0) {
+    const first = nonFlagArgs[0];
+    if (first === 'init' || first === 'rules') {
+      command = first;
+      if (nonFlagArgs[1]) {
+        targetPath = path.resolve(process.cwd(), nonFlagArgs[1]);
+      }
+    } else if (first === 'verify') {
+      command = 'verify';
+      if (nonFlagArgs[1]) {
+        targetPath = path.resolve(process.cwd(), nonFlagArgs[1]);
+      }
+    } else {
+      command = 'verify';
+      targetPath = path.resolve(process.cwd(), first);
+    }
+  }
+
+  if (!fs.existsSync(targetPath)) {
+    console.error(`Error: Target path does not exist: ${targetPath}`);
+    process.exit(1);
+  }
+
   if (command === 'init') {
-    const rulesEngine = new ProjectRulesEngine(cwd);
+    const rulesEngine = new ProjectRulesEngine(targetPath);
     const created = await rulesEngine.initDefaultRulesFile();
     console.log(`Initialized ProofCode rules at: ${created}`);
     process.exit(0);
   }
 
   if (command === 'rules') {
-    const rulesEngine = new ProjectRulesEngine(cwd);
+    const rulesEngine = new ProjectRulesEngine(targetPath);
     const rules = rulesEngine.parseRules();
-    console.log(`\nConfigured Rules (${rules.length}):`);
+    console.log(`\nConfigured Rules (${rules.length}) in ${targetPath}:`);
     rules.forEach((r, idx) => {
       console.log(`  ${idx + 1}. [${r.severity}] ${r.title}: ${r.description}`);
     });
@@ -58,7 +138,7 @@ Options:
 
   // Default: Verify
   try {
-    const engine = new ProofCodeEngine(cwd);
+    const engine = new ProofCodeEngine(targetPath);
     const report = await engine.verify({
       staged: isStaged,
       runLiveTests: isLive
@@ -72,8 +152,12 @@ Options:
       console.log(ReportFormatter.toTerminal(report));
     }
 
+    if (isCi) {
+      emitGitHubAnnotations(report, targetPath);
+    }
+
     // Write artifact report if .proofcode dir exists
-    const proofcodeDir = path.join(cwd, '.proofcode');
+    const proofcodeDir = path.join(targetPath, '.proofcode');
     if (fs.existsSync(proofcodeDir)) {
       fs.writeFileSync(
         path.join(proofcodeDir, 'report.md'),
@@ -87,8 +171,10 @@ Options:
       );
     }
 
-    // Exit code: 0 if ready or needs review, 1 if blocked
+    // Exit code: 0 if ready, 1 if blocked (or if strict and needs review)
     if (report.verdict === 'BLOCKED') {
+      process.exit(1);
+    } else if (isStrict && report.verdict !== 'READY_TO_SHIP') {
       process.exit(1);
     } else {
       process.exit(0);
@@ -99,4 +185,6 @@ Options:
   }
 }
 
-runCli();
+if (require.main === module) {
+  runCli();
+}
