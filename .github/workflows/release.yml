@@ -1,0 +1,48 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    name: Build & Publish GitHub Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Verify Quality Gates
+        run: |
+          npm run typecheck
+          npm run lint
+          npm test
+
+      - name: Build Extension Bundles
+        run: npm run build
+
+      - name: Package Extension (.vsix)
+        run: npx --yes @vscode/vsce package --no-dependencies
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: proofcode-*.vsix
+          draft: false
+          prerelease: false
+          generate_release_notes: true
