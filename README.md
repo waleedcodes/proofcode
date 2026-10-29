@@ -8,7 +8,7 @@
   <p>
     <a href="https://github.com/waleedcodes/proofcode/actions"><img src="https://img.shields.io/badge/CI-Passing-00E599?style=flat-square&logo=githubactions&logoColor=white" alt="CI Status" /></a>
     <a href="https://github.com/waleedcodes/proofcode/blob/working/LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue?style=flat-square" alt="License" /></a>
-    <a href="https://marketplace.visualstudio.com/items?itemName=proofcode.proofcode"><img src="https://img.shields.io/badge/VS_Code_Extension-v0.1.0-8B5CF6?style=flat-square&logo=visualstudiocode&logoColor=white" alt="Version" /></a>
+    <a href="https://marketplace.visualstudio.com/items?itemName=waleedcodes.proofcode"><img src="https://img.shields.io/badge/VS_Code_Extension-v0.1.0-8B5CF6?style=flat-square&logo=visualstudiocode&logoColor=white" alt="Version" /></a>
     <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5.5-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" /></a>
     <a href="https://vitest.dev/"><img src="https://img.shields.io/badge/Tests-34%2F34_Passing-10B981?style=flat-square&logo=vitest&logoColor=white" alt="Tests Passing" /></a>
   </p>
