@@ -151,7 +151,9 @@
     "typecheck": "tsc --noEmit",
     "cli": "node dist/cli.js",
     "demo": "tsx scripts/run-demo.ts",
-    "package": "npx @vscode/vsce package --no-dependencies"
+    "package": "npx @vscode/vsce package --no-dependencies",
+    "publish:vsce": "npx @vscode/vsce publish --no-dependencies -p",
+    "publish:ovsx": "npx ovsx publish --no-dependencies -p"
   },
   "dependencies": {
     "typescript": "~5.5.4"
