@@ -277,6 +277,175 @@ export class RiskEngine {
         this.checkUnhandledNullDbResult(node, sourceFile, filePath, isLineChanged, getSnippet, findings);
       }
 
+      // Rule: Path Traversal in File System Operations (PC-SEC-003)
+      if (ts.isCallExpression(node) && !isTest) {
+        const text = node.expression.getText(sourceFile);
+        const isFsOp =
+          /\bfs\.(readFile|readFileSync|createReadStream|writeFile|writeFileSync|unlink|unlinkSync|open|openSync|rm|rmSync|readdir|readdirSync)\b/.test(text) ||
+          /^(readFile|readFileSync|createReadStream|writeFile|writeFileSync|unlink|unlinkSync|open|openSync|rm|rmSync|readdir|readdirSync)$/.test(text);
+        const isPathOp = /\bpath\.(join|resolve)\b/.test(text) || /^(join|resolve)$/.test(text);
+
+        if ((isFsOp || isPathOp) && node.arguments.length > 0) {
+          const hasUnvalidatedInput = node.arguments.some((arg) => {
+            const argStr = arg.getText(sourceFile);
+            return (
+              /\b(req\.query|req\.params|req\.body|params\.|searchParams\.|query\.|userInput|userPath|filePath|fileName|filename)\b/i.test(argStr) &&
+              !argStr.includes('path.basename(') &&
+              !argStr.includes('basename(')
+            );
+          });
+
+          if (hasUnvalidatedInput) {
+            const { line, column } = getLineAndColumn(node.getStart(sourceFile));
+            if (isLineChanged(line)) {
+              findings.push({
+                id: `PC-PATH-${filePath}-${line}`,
+                ruleId: 'PC-SEC-003',
+                category: 'security',
+                title: 'Potential Path Traversal in File Operation',
+                severity: 'HIGH',
+                description: `File operation '${text}' uses unvalidated user input or dynamic path parameters, risking directory traversal attacks.`,
+                file: filePath,
+                line,
+                column,
+                snippet: getSnippet(line),
+                evidenceTrace: [
+                  {
+                    file: filePath,
+                    line,
+                    description: `Call to ${text}(...) with user-controlled path parameter`
+                  },
+                  {
+                    file: filePath,
+                    line,
+                    description: 'No path.basename() sanitization or directory boundary validation detected'
+                  }
+                ],
+                recommendation:
+                  'Use path.basename() to sanitize filenames, or verify that path.resolve() stays within the intended root directory.'
+              });
+            }
+          }
+        }
+      }
+
+      // Rule: Permissive Wildcard CORS Header (PC-SEC-007)
+      if (ts.isCallExpression(node)) {
+        const text = node.expression.getText(sourceFile);
+        const isHeaderSetter = /\b(setHeader|header|set|append)\b/.test(text);
+        if (isHeaderSetter && node.arguments.length >= 2) {
+          const headerKey = node.arguments[0].getText(sourceFile).replace(/['"`]/g, '').toLowerCase();
+          const headerVal = node.arguments[1].getText(sourceFile).replace(/['"`]/g, '').trim();
+          if (headerKey === 'access-control-allow-origin' && headerVal === '*') {
+            const { line, column } = getLineAndColumn(node.getStart(sourceFile));
+            if (isLineChanged(line)) {
+              findings.push({
+                id: `PC-CORS-${filePath}-${line}`,
+                ruleId: 'PC-SEC-007',
+                category: 'security',
+                title: 'Permissive Wildcard CORS Header Detected',
+                severity: 'HIGH',
+                description:
+                  "Access-Control-Allow-Origin is configured as wildcard '*', allowing unauthorized cross-origin access from any untrusted domain.",
+                file: filePath,
+                line,
+                column,
+                snippet: getSnippet(line),
+                evidenceTrace: [
+                  {
+                    file: filePath,
+                    line,
+                    description: `Header '${headerKey}' set to wildcard '*'`
+                  }
+                ],
+                recommendation:
+                  'Replace wildcard * with an explicit whitelist of trusted application origins.'
+              });
+            }
+          }
+        }
+      } else if (ts.isPropertyAssignment(node)) {
+        const propName = node.name.getText(sourceFile).replace(/['"`]/g, '').toLowerCase();
+        if (propName === 'access-control-allow-origin') {
+          const propVal = node.initializer.getText(sourceFile).replace(/['"`]/g, '').trim();
+          if (propVal === '*') {
+            const { line, column } = getLineAndColumn(node.getStart(sourceFile));
+            if (isLineChanged(line)) {
+              findings.push({
+                id: `PC-CORS-${filePath}-${line}`,
+                ruleId: 'PC-SEC-007',
+                category: 'security',
+                title: 'Permissive Wildcard CORS Header Detected',
+                severity: 'HIGH',
+                description:
+                  "Access-Control-Allow-Origin is set to '*' in header dictionary, permitting arbitrary cross-origin requests.",
+                file: filePath,
+                line,
+                column,
+                snippet: getSnippet(line),
+                evidenceTrace: [
+                  {
+                    file: filePath,
+                    line,
+                    description: `Property '${propName}' assigned wildcard '*'`
+                  }
+                ],
+                recommendation:
+                  'Specify exact allowed origins instead of wildcard * for secure API endpoints.'
+              });
+            }
+          }
+        }
+      }
+
+      // Rule: ReDoS Vulnerability Pattern (PC-REL-007)
+      if (!isTest && (ts.isRegularExpressionLiteral(node) || (ts.isNewExpression(node) && node.expression.getText(sourceFile) === 'RegExp'))) {
+        let patternStr = '';
+        if (ts.isRegularExpressionLiteral(node)) {
+          patternStr = node.text || node.getText(sourceFile);
+        } else if (node.arguments && node.arguments.length > 0 && ts.isStringLiteral(node.arguments[0])) {
+          patternStr = node.arguments[0].text;
+        }
+
+        if (patternStr) {
+          const hasNestedQuantifier = /\((?:[^()\\]|\\.)*[+*]\)(?:[+*]|\{\d+,?\d*\})/.test(patternStr);
+          const hasOverlappingAlternation = /\((?:[^()\\]|\\.)*\|(?:[^()\\]|\\.)*\)(?:[+*]|\{\d+,?\d*\})/.test(patternStr);
+
+          if (hasNestedQuantifier || (hasOverlappingAlternation && /[+*]/.test(patternStr))) {
+            const { line, column } = getLineAndColumn(node.getStart(sourceFile));
+            if (isLineChanged(line)) {
+              findings.push({
+                id: `PC-REDOS-${filePath}-${line}`,
+                ruleId: 'PC-REL-007',
+                category: 'reliability',
+                title: 'Potential Regular Expression Denial of Service (ReDoS)',
+                severity: 'HIGH',
+                description:
+                  'Regular expression contains nested quantifiers or overlapping repetitions susceptible to catastrophic backtracking.',
+                file: filePath,
+                line,
+                column,
+                snippet: getSnippet(line),
+                evidenceTrace: [
+                  {
+                    file: filePath,
+                    line,
+                    description: `Regex pattern ${patternStr} contains nested repetition or ambiguous alternation`
+                  },
+                  {
+                    file: filePath,
+                    line,
+                    description: 'Evaluation against non-matching input can result in exponential backtracking and process freeze'
+                  }
+                ],
+                recommendation:
+                  'Simplify regular expression to eliminate nested quantifiers (e.g. rewrite (a+)+), or validate input length beforehand.'
+              });
+            }
+          }
+        }
+      }
+
       ts.forEachChild(node, visit);
     };
 

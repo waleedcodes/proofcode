@@ -131,4 +131,51 @@ export async function getProfile(id: string) {
     const nullRisk = findings.find((f) => f.ruleId === 'PC-DATA-001');
     expect(nullRisk).toBeUndefined();
   });
+
+  it('should detect path traversal in file system operations (PC-SEC-003)', () => {
+    const code = `
+import * as fs from 'fs';
+import * as path from 'path';
+
+export function readUserFile(req: any) {
+  const filePath = path.join('/var/data', req.query.filename);
+  return fs.readFileSync(filePath, 'utf8');
+}
+`;
+    const findings = RiskEngine.analyzeFile('/src/files.ts', code);
+    const pathRisk = findings.find((f) => f.ruleId === 'PC-SEC-003');
+    expect(pathRisk).toBeDefined();
+    expect(pathRisk?.severity).toBe('HIGH');
+    expect(pathRisk?.title).toContain('Path Traversal');
+    expect(pathRisk?.evidenceTrace[0].description).toContain('path parameter');
+  });
+
+  it('should detect permissive wildcard CORS headers (PC-SEC-007)', () => {
+    const code = `
+export function handleCors(res: any) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+}
+`;
+    const findings = RiskEngine.analyzeFile('/src/apiCors.ts', code);
+    const corsRisk = findings.find((f) => f.ruleId === 'PC-SEC-007');
+    expect(corsRisk).toBeDefined();
+    expect(corsRisk?.severity).toBe('HIGH');
+    expect(corsRisk?.title).toContain('Permissive Wildcard CORS');
+  });
+
+  it('should detect regular expression denial of service ReDoS (PC-REL-007)', () => {
+    const code = `
+export function validateEmail(input: string) {
+  const vulnerableRegex = /([a-zA-Z0-9]+)+$/;
+  return vulnerableRegex.test(input);
+}
+`;
+    const findings = RiskEngine.analyzeFile('/src/validator.ts', code);
+    const redosRisk = findings.find((f) => f.ruleId === 'PC-REL-007');
+    expect(redosRisk).toBeDefined();
+    expect(redosRisk?.severity).toBe('HIGH');
+    expect(redosRisk?.title).toContain('ReDoS');
+    expect(redosRisk?.evidenceTrace[0].description).toContain('nested repetition');
+  });
 });
