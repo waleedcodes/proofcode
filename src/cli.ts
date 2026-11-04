@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import { ProofCodeEngine } from './engine/proofCodeEngine';
 import { ReportFormatter } from './engine/reportFormatter';
 import { ProjectRulesEngine } from './rules/projectRulesEngine';
+import { HookInstaller } from './git/hookInstaller';
 import { VerificationReport } from './types';
 
 export function emitGitHubAnnotations(report: VerificationReport, baseDir: string): void {
@@ -68,9 +69,11 @@ Usage:
   proofcode [command] [target-directory] [options]
 
 Commands:
-  verify [dir]   Verify working tree or git diff (default: current directory)
-  init [dir]     Initialize default .proofcode/rules.md in target project
-  rules [dir]    List and check configured project rules
+  verify [dir]         Verify working tree or git diff (default: current directory)
+  install-hook [dir]   Install deterministic pre-commit hook in .git/hooks/pre-commit
+  uninstall-hook [dir] Uninstall ProofCode pre-commit hook
+  init [dir]           Initialize default .proofcode/rules.md in target project
+  rules [dir]          List and check configured project rules
 
 Options:
   --staged       Verify only staged git changes (git diff --cached)
@@ -83,6 +86,8 @@ Options:
 
 Examples:
   proofcode verify
+  proofcode verify --staged
+  proofcode install-hook
   proofcode verify ./examples/demo-app
   proofcode verify --staged --ci
   proofcode verify ./apps/api --live --markdown
@@ -97,7 +102,13 @@ Examples:
 
   if (nonFlagArgs.length > 0) {
     const first = nonFlagArgs[0];
-    if (first === 'init' || first === 'rules') {
+    if (
+      first === 'init' ||
+      first === 'rules' ||
+      first === 'install-hook' ||
+      first === 'hook' ||
+      first === 'uninstall-hook'
+    ) {
       command = first;
       if (nonFlagArgs[1]) {
         targetPath = path.resolve(process.cwd(), nonFlagArgs[1]);
@@ -116,6 +127,29 @@ Examples:
   if (!fs.existsSync(targetPath)) {
     console.error(`Error: Target path does not exist: ${targetPath}`);
     process.exit(1);
+  }
+
+  if (command === 'install-hook' || command === 'hook') {
+    const res = HookInstaller.installPreCommitHook(targetPath);
+    if (res.success) {
+      console.log(`\n🛡️  ${res.message}`);
+      console.log('   Every git commit will now be verified by ProofCode before being committed.\n');
+      process.exit(0);
+    } else {
+      console.error(`\n❌ ${res.message}\n`);
+      process.exit(1);
+    }
+  }
+
+  if (command === 'uninstall-hook') {
+    const res = HookInstaller.uninstallPreCommitHook(targetPath);
+    if (res.success) {
+      console.log(`\n🛡️  ${res.message}\n`);
+      process.exit(0);
+    } else {
+      console.error(`\n❌ ${res.message}\n`);
+      process.exit(1);
+    }
   }
 
   if (command === 'init') {
