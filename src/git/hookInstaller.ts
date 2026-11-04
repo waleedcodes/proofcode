@@ -7,14 +7,14 @@ export class HookInstaller {
    */
   public static findGitRoot(startDir: string): string | null {
     let current = path.resolve(startDir);
-    while (true) {
+    let prev = '';
+    while (current !== prev) {
       const gitDir = path.join(current, '.git');
       if (fs.existsSync(gitDir)) {
         return current;
       }
-      const parent = path.dirname(current);
-      if (parent === current) break;
-      current = parent;
+      prev = current;
+      current = path.dirname(current);
     }
     return null;
   }
