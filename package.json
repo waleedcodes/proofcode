@@ -65,6 +65,12 @@
         "icon": "$(shield)"
       },
       {
+        "command": "proofcode.verifyWithLiveTests",
+        "title": "Verify Changes with Live Unit Tests",
+        "category": "ProofCode",
+        "icon": "$(beaker)"
+      },
+      {
         "command": "proofcode.openDashboard",
         "title": "Open Verification Dashboard",
         "category": "ProofCode",

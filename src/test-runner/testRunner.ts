@@ -43,6 +43,11 @@ export class TestRunner {
     }
   }
 
+  private stripAnsi(str: string): string {
+    // eslint-disable-next-line no-control-regex
+    return str.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '').trim();
+  }
+
   private async executeCommand(
     cmd: string,
     cwd: string,
@@ -61,18 +66,19 @@ export class TestRunner {
         status: 'PASS',
         durationMs: Date.now() - startTime,
         message: 'Completed successfully without errors.',
-        details: stdout.slice(0, 500)
+        details: this.stripAnsi(stdout).slice(0, 1000)
       };
     } catch (err: unknown) {
       const execError = err as { stdout?: string; stderr?: string; message?: string };
-      const output = `${execError.stdout || ''}\n${execError.stderr || ''}`.trim();
+      const rawOutput = `${execError.stdout || ''}\n${execError.stderr || ''}`.trim();
+      const cleanOutput = this.stripAnsi(rawOutput);
 
       return {
         name,
         status: 'FAIL',
         durationMs: Date.now() - startTime,
         message: 'Checks reported errors.',
-        details: output.slice(0, 1000) || execError.message
+        details: cleanOutput.slice(0, 3000) || execError.message
       };
     }
   }
@@ -146,6 +152,65 @@ export class TestRunner {
       status: 'SKIPPED',
       message: 'No test script found in package.json.'
     };
+  }
+
+  /**
+   * Executes targeted unit tests only on affected test files for ultra-fast (<1s) feedback.
+   */
+  public async runTargetedTests(
+    workspaceRoot: string,
+    targetTestFiles: string[]
+  ): Promise<CheckResult> {
+    if (targetTestFiles.length === 0) {
+      return this.runUnitTests(workspaceRoot);
+    }
+
+    const scripts = this.getPackageScripts(workspaceRoot);
+    const pm = this.detectPackageManager(workspaceRoot);
+    const pkgJsonPath = path.join(workspaceRoot, 'package.json');
+    let pkgJson: { dependencies?: Record<string, string>; devDependencies?: Record<string, string> } = {};
+    if (fs.existsSync(pkgJsonPath)) {
+      try {
+        pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8'));
+      } catch {
+        // ignore
+      }
+    }
+
+    const allDeps = {
+      ...(pkgJson.dependencies || {}),
+      ...(pkgJson.devDependencies || {})
+    };
+
+    const relFiles = targetTestFiles.map((f) =>
+      path.isAbsolute(f) ? path.relative(workspaceRoot, f) : f
+    );
+    const filesArg = relFiles.map((f) => `"${f}"`).join(' ');
+
+    let cmd: string;
+    if (allDeps['vitest'] || scripts['test']?.includes('vitest')) {
+      cmd = `npx vitest run ${filesArg}`;
+    } else if (allDeps['jest'] || scripts['test']?.includes('jest')) {
+      cmd = `npx jest ${filesArg}`;
+    } else if (allDeps['mocha'] || scripts['test']?.includes('mocha')) {
+      cmd = `npx mocha ${filesArg}`;
+    } else if (scripts['test']) {
+      cmd = `${pm} test -- ${filesArg}`;
+    } else {
+      return {
+        name: 'Targeted Tests',
+        status: 'SKIPPED',
+        message: 'No test runner detected to execute targeted tests.'
+      };
+    }
+
+    const result = await this.executeCommand(cmd, workspaceRoot, 'Targeted Tests');
+    if (result.status === 'PASS') {
+      result.message = `Passed ${targetTestFiles.length} affected test suite(s).`;
+    } else if (result.status === 'FAIL') {
+      result.message = `Failures detected in ${targetTestFiles.length} affected test suite(s).`;
+    }
+    return result;
   }
 
   public async runBuild(workspaceRoot: string): Promise<CheckResult> {

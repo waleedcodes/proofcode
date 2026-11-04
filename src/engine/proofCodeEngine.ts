@@ -4,6 +4,7 @@ import { GitService } from '../git/gitService';
 import { ProjectGraph } from '../graph/projectGraph';
 import { ProjectRulesEngine } from '../rules/projectRulesEngine';
 import { RiskEngine } from '../rules/riskEngine';
+import { ContractAnalyzer } from '../analyzer/contractAnalyzer';
 import { TestRunner } from '../test-runner/testRunner';
 import {
   BreakageRiskItem,
@@ -112,6 +113,15 @@ export class ProofCodeEngine {
       allRisks.push(...risks);
     }
 
+    // 4b. Breaking Contract & Signature Drift Analysis (PC-BREAK-001)
+    const contractBreaks = await ContractAnalyzer.analyzeContractBreaks(
+      repoRoot,
+      filesToVerify,
+      graph,
+      this.gitService
+    );
+    allRisks.push(...contractBreaks);
+
     // 5. Project Rules Verification
     const rulesEngine = new ProjectRulesEngine(activeRoot, options.rulesFilePath);
     const ruleResults = await rulesEngine.evaluateRules(filesToVerify, graph);
@@ -123,10 +133,29 @@ export class ProofCodeEngine {
     let buildCheck: CheckResult = { name: 'Build', status: 'SKIPPED', message: 'Not run' };
 
     if (options.runLiveTests) {
+      // Find affected test files from changed files and downstream dependents
+      const affectedTestFiles = new Set<string>();
+      for (const f of filesToVerify) {
+        if (graph.isTestFile(f.newPath)) {
+          affectedTestFiles.add(path.resolve(repoRoot, f.newPath));
+        }
+      }
+      for (const dep of impact.affectedFiles) {
+        if (graph.isTestFile(dep)) {
+          affectedTestFiles.add(path.isAbsolute(dep) ? dep : path.resolve(repoRoot, dep));
+        }
+      }
+
+      const targetList = Array.from(affectedTestFiles);
+      const testPromise =
+        targetList.length > 0
+          ? this.testRunner.runTargetedTests(repoRoot, targetList)
+          : this.testRunner.runUnitTests(repoRoot);
+
       [tsCheck, lintCheck, unitTestsCheck, buildCheck] = await Promise.all([
         this.testRunner.runTypeScriptCheck(repoRoot),
         this.testRunner.runLint(repoRoot),
-        this.testRunner.runUnitTests(repoRoot),
+        testPromise,
         this.testRunner.runBuild(repoRoot)
       ]);
     }

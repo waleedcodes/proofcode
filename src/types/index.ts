@@ -61,6 +61,13 @@ export type SymbolKind =
   | 'variable'
   | 'api_route';
 
+export interface ParameterInfo {
+  name: string;
+  isOptional: boolean;
+  type?: string;
+  hasDefault?: boolean;
+}
+
 export interface SymbolInfo {
   name: string;
   kind: SymbolKind;
@@ -73,6 +80,8 @@ export interface SymbolInfo {
   isDefaultExport?: boolean;
   parentSymbol?: string;
   calls: string[];
+  parameters?: ParameterInfo[];
+  returnType?: string;
 }
 
 export interface ImportInfo {

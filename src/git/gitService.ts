@@ -46,6 +46,24 @@ export class GitService {
     }
   }
 
+  public async getFileContentAtRef(
+    filePath: string,
+    ref: string = 'HEAD',
+    repoRoot?: string
+  ): Promise<string | null> {
+    const cwd = repoRoot || (await this.getRepoRoot());
+    const relPath = path.isAbsolute(filePath) ? path.relative(cwd, filePath) : filePath;
+    try {
+      const { stdout } = await execAsync(`git show ${ref}:"${relPath.replace(/\\/g, '/')}"`, {
+        cwd,
+        maxBuffer: this.maxBuffer
+      });
+      return stdout;
+    } catch {
+      return null;
+    }
+  }
+
   public async getStatus(repoRoot?: string): Promise<GitFileStatus[]> {
     const cwd = repoRoot || this.cwd;
     try {

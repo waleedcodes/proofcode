@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as ts from 'typescript';
-import { ExportInfo, FileAnalysis, ImportInfo, SymbolInfo, SymbolKind } from '../types';
+import { ExportInfo, FileAnalysis, ImportInfo, ParameterInfo, SymbolInfo, SymbolKind } from '../types';
 
 export class AstAnalyzer {
   /**
@@ -46,6 +46,15 @@ export class AstAnalyzer {
       };
       ts.forEachChild(node, visitCall);
       return Array.from(new Set(calls));
+    };
+
+    const extractParameters = (params: ts.NodeArray<ts.ParameterDeclaration>) => {
+      return params.map((p) => ({
+        name: p.name.getText(sourceFile),
+        isOptional: Boolean(p.questionToken) || Boolean(p.initializer),
+        type: p.type ? p.type.getText(sourceFile) : undefined,
+        hasDefault: Boolean(p.initializer)
+      }));
     };
 
     const visit = (node: ts.Node) => {
@@ -119,7 +128,9 @@ export class AstAnalyzer {
           endColumn: end.column,
           isExported,
           isDefaultExport: isDefault,
-          calls
+          calls,
+          parameters: extractParameters(node.parameters),
+          returnType: node.type ? node.type.getText(sourceFile) : undefined
         };
         symbols.push(sym);
 
@@ -160,6 +171,13 @@ export class AstAnalyzer {
             }
 
             const calls = decl.initializer ? extractCallsFromNode(decl.initializer) : [];
+            let params: ParameterInfo[] | undefined;
+            let retType: string | undefined;
+
+            if (decl.initializer && (ts.isArrowFunction(decl.initializer) || ts.isFunctionExpression(decl.initializer))) {
+              params = extractParameters(decl.initializer.parameters);
+              retType = decl.initializer.type ? decl.initializer.type.getText(sourceFile) : undefined;
+            }
 
             symbols.push({
               name,
@@ -170,7 +188,9 @@ export class AstAnalyzer {
               startColumn: start.column,
               endColumn: end.column,
               isExported,
-              calls
+              calls,
+              parameters: params,
+              returnType: retType
             });
 
             if (isExported) {
@@ -236,7 +256,9 @@ export class AstAnalyzer {
               endColumn: mEnd.column,
               isExported,
               parentSymbol: className,
-              calls: mCalls
+              calls: mCalls,
+              parameters: extractParameters(member.parameters),
+              returnType: member.type ? member.type.getText(sourceFile) : undefined
             });
           }
         }

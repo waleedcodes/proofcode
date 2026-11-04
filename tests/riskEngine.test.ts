@@ -178,4 +178,146 @@ export function validateEmail(input: string) {
     expect(redosRisk?.title).toContain('ReDoS');
     expect(redosRisk?.evidenceTrace[0].description).toContain('nested repetition');
   });
+
+  it('should detect unawaited promise in conditional statement (PC-REL-008)', () => {
+    const code = `
+export async function handleRequest(user: any) {
+  if (checkPermission(user)) {
+    return 'granted';
+  }
+  return 'denied';
+}
+`;
+    const findings = RiskEngine.analyzeFile('/src/security.ts', code);
+    const promiseRisk = findings.find((f) => f.ruleId === 'PC-REL-008');
+    expect(promiseRisk).toBeDefined();
+    expect(promiseRisk?.severity).toBe('HIGH');
+    expect(promiseRisk?.title).toContain('Unawaited Async Call');
+    expect(promiseRisk?.evidenceTrace[0].description).toContain('returns a Promise object without \'await\'');
+  });
+
+  it('should detect AI test weakening when test assertions are deleted (PC-TEST-001)', () => {
+    const fakeDiff = {
+      oldPath: 'tests/auth.test.ts',
+      newPath: 'tests/auth.test.ts',
+      isNew: false,
+      isDeleted: false,
+      isRenamed: false,
+      hunks: [
+        {
+          oldStart: 1,
+          oldLines: 5,
+          newStart: 1,
+          newLines: 3,
+          header: '@@ -1,5 +1,3 @@',
+          lines: [
+            ' it("should check auth", () => {',
+            '-  expect(res.status).toBe(200);',
+            '-  expect(res.body.token).toBeDefined();',
+            '+  console.log("passed");',
+            ' });'
+          ]
+        }
+      ],
+      addedLines: [4],
+      deletedLines: [2, 3],
+      modifiedLineRanges: [{ start: 1, end: 5 }]
+    };
+
+    const findings = RiskEngine.analyzeFile('tests/auth.test.ts', 'it("should check auth", () => {});', fakeDiff);
+    const testWeaken = findings.find((f) => f.ruleId === 'PC-TEST-001');
+    expect(testWeaken).toBeDefined();
+    expect(testWeaken?.severity).toBe('HIGH');
+    expect(testWeaken?.title).toContain('Test Weakening');
+    expect(testWeaken?.description).toContain('removed 2 test assertion(s)');
+  });
+
+  it('should detect scope creep when sensitive root config files are modified (PC-SCOPE-001)', () => {
+    const fakeDiff = {
+      oldPath: '.env',
+      newPath: '.env',
+      isNew: false,
+      isDeleted: false,
+      isRenamed: false,
+      hunks: [],
+      addedLines: [1, 2],
+      deletedLines: [],
+      modifiedLineRanges: [{ start: 1, end: 2 }]
+    };
+
+    const findings = RiskEngine.analyzeFile('.env', 'DATABASE_URL=postgres://...\n', fakeDiff);
+    const scopeRisk = findings.find((f) => f.ruleId === 'PC-SCOPE-001');
+    expect(scopeRisk).toBeDefined();
+    expect(scopeRisk?.severity).toBe('HIGH');
+    expect(scopeRisk?.title).toContain('Sensitive Configuration File Modified');
+  });
+
+  it('should detect silent error swallowing in empty catch block (PC-REL-009)', () => {
+    const code = `
+export function parseConfig(raw: string) {
+  try {
+    return JSON.parse(raw);
+  } catch (err) {}
+}
+`;
+    const findings = RiskEngine.analyzeFile('/src/parser.ts', code);
+    const catchRisk = findings.find((f) => f.ruleId === 'PC-REL-009');
+    expect(catchRisk).toBeDefined();
+    expect(catchRisk?.severity).toBe('MEDIUM');
+    expect(catchRisk?.title).toContain('Silent Error Swallowing');
+  });
+
+  it('should detect incomplete AI stubs and unimplemented functions (PC-STUB-001)', () => {
+    const code = `
+export function calculateTax(amount: number): number {
+  throw new Error("Not implemented yet");
+}
+`;
+    const findings = RiskEngine.analyzeFile('/src/tax.ts', code);
+    const stubRisk = findings.find((f) => f.ruleId === 'PC-STUB-001');
+    expect(stubRisk).toBeDefined();
+    expect(stubRisk?.severity).toBe('HIGH');
+    expect(stubRisk?.title).toContain('Incomplete AI Stub');
+  });
+
+  it('should detect silent security field drop in update payloads (PC-DATA-002)', () => {
+    const fakeDiff = {
+      oldPath: 'src/services/userService.ts',
+      newPath: 'src/services/userService.ts',
+      isNew: false,
+      isDeleted: false,
+      isRenamed: false,
+      hunks: [
+        {
+          oldStart: 10,
+          oldLines: 6,
+          newStart: 10,
+          newLines: 4,
+          header: '@@ -10,6 +10,4 @@',
+          lines: [
+            ' const payload = {',
+            '   name: req.body.name,',
+            '-  tenantId: session.tenantId,',
+            '-  userId: session.userId,',
+            '+  status: "active"',
+            ' };'
+          ]
+        }
+      ],
+      addedLines: [13],
+      deletedLines: [12, 13],
+      modifiedLineRanges: [{ start: 10, end: 15 }]
+    };
+
+    const findings = RiskEngine.analyzeFile(
+      'src/services/userService.ts',
+      'const payload = { name: req.body.name, status: "active" };',
+      fakeDiff
+    );
+    const dropRisk = findings.find((f) => f.ruleId === 'PC-DATA-002');
+    expect(dropRisk).toBeDefined();
+    expect(dropRisk?.severity).toBe('HIGH');
+    expect(dropRisk?.title).toContain('Silent Security Field Dropped');
+    expect(dropRisk?.description).toContain('tenantId');
+  });
 });

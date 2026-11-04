@@ -1,4 +1,5 @@
 import * as fs from 'node:fs';
+import * as path from 'node:path';
 import * as ts from 'typescript';
 import { EvidenceTraceStep, FileDiff, RiskFinding, RiskSeverity } from '../types';
 
@@ -11,7 +12,36 @@ export class RiskEngine {
     content?: string,
     fileDiff?: FileDiff
   ): RiskFinding[] {
+    const normalizedPath = filePath.replace(/\\/g, '/');
+    const isSensitiveConfig =
+      /(\.env|\.env\.[a-z0-9]+|package\.json|tsconfig\.json|\.npmrc|\.github\/workflows\/.*\.ya?ml)$/i.test(normalizedPath);
+
     if (!/\.(ts|tsx|js|jsx|mjs|cjs)$/.test(filePath)) {
+      if (isSensitiveConfig && fileDiff) {
+        const isEnv = /\.env/i.test(normalizedPath);
+        const line = fileDiff.modifiedLineRanges[0]?.start ?? 1;
+        return [
+          {
+            id: `PC-SCOPE-${filePath}-${line}`,
+            ruleId: 'PC-SCOPE-001',
+            category: 'security',
+            title: `Sensitive Configuration File Modified (${path.basename(filePath)})`,
+            severity: isEnv ? 'HIGH' : 'MEDIUM',
+            description: `Modifications detected in sensitive root configuration file '${path.basename(filePath)}'. Verify these changes are intentional and not unintended AI scope creep.`,
+            file: filePath,
+            line,
+            snippet: content ? content.slice(0, 150) : `Modified ${filePath}`,
+            evidenceTrace: [
+              {
+                file: filePath,
+                line,
+                description: `Critical config file modified: ${fileDiff.addedLines.length} line(s) added, ${fileDiff.deletedLines.length} line(s) removed`
+              }
+            ],
+            recommendation: 'Carefully review environment variables and dependency changes to prevent credential leakage or supply chain shifts.'
+          }
+        ];
+      }
       return [];
     }
 
@@ -446,10 +476,173 @@ export class RiskEngine {
         }
       }
 
+      // Rule: Unawaited Promise in Conditional Statement (PC-REL-008)
+      if (ts.isIfStatement(node) || ts.isConditionalExpression(node) || ts.isWhileStatement(node)) {
+        const condition = ts.isIfStatement(node)
+          ? node.expression
+          : ts.isConditionalExpression(node)
+          ? node.condition
+          : node.expression;
+
+        const checkConditionCalls = (expr: ts.Node) => {
+          if (ts.isCallExpression(expr)) {
+            if (!ts.isAwaitExpression(expr.parent)) {
+              const callText = expr.expression.getText(sourceFile);
+              const isAsyncCheckName =
+                /^(check|verify|validate|auth|authenticate|has|is|can|find|fetch|query)[A-Z0-9_]*/i.test(callText) ||
+                /\b(check|verify|validate|auth|authenticate|has|is|can)\b/i.test(callText);
+
+              if (isAsyncCheckName) {
+                const { line, column } = getLineAndColumn(expr.getStart(sourceFile));
+                if (isLineChanged(line)) {
+                  findings.push({
+                    id: `PC-PROMISE-COND-${filePath}-${line}`,
+                    ruleId: 'PC-REL-008',
+                    category: 'reliability',
+                    title: 'Unawaited Async Call in Conditional Statement',
+                    severity: 'HIGH',
+                    description: `Call to '${callText}()' is evaluated inside a conditional without 'await'. In JavaScript, Promise instances are always truthy, which can cause logic or security bypasses.`,
+                    file: filePath,
+                    line,
+                    column,
+                    snippet: getSnippet(line),
+                    evidenceTrace: [
+                      {
+                        file: filePath,
+                        line,
+                        description: `Conditional expression '${expr.getText(sourceFile)}' returns a Promise object without 'await'`
+                      },
+                      {
+                        file: filePath,
+                        line,
+                        description: 'Objects and Promises always evaluate to true in boolean conditionals'
+                      }
+                    ],
+                    recommendation: `Add 'await' before ${callText}(...) (e.g. if (await ${callText}(...))), and ensure the enclosing function is async.`
+                  });
+                }
+              }
+            }
+          }
+          ts.forEachChild(expr, checkConditionCalls);
+        };
+
+        checkConditionCalls(condition);
+      }
+
+      // Rule: Silent Error Swallowing in Catch Block (PC-REL-009)
+      if (ts.isCatchClause(node)) {
+        const { line, column } = getLineAndColumn(node.getStart(sourceFile));
+        if (isLineChanged(line)) {
+          const statements = node.block.statements;
+          const isEmpty = statements.length === 0;
+          const isOnlyBareReturn =
+            statements.length === 1 &&
+            ts.isReturnStatement(statements[0]) &&
+            (!statements[0].expression ||
+              statements[0].expression.getText(sourceFile) === 'null' ||
+              statements[0].expression.getText(sourceFile) === 'undefined' ||
+              statements[0].expression.getText(sourceFile) === 'false' ||
+              statements[0].expression.getText(sourceFile) === '""' ||
+              statements[0].expression.getText(sourceFile) === '{}');
+
+          if (isEmpty || isOnlyBareReturn) {
+            findings.push({
+              id: `PC-EMPTY-CATCH-${filePath}-${line}`,
+              ruleId: 'PC-REL-009',
+              category: 'reliability',
+              title: 'Silent Error Swallowing in Catch Block',
+              severity: 'MEDIUM',
+              description:
+                'Catch block silently swallows exceptions without logging or re-throwing, concealing runtime errors from developers and telemetry.',
+              file: filePath,
+              line,
+              column,
+              snippet: getSnippet(line),
+              evidenceTrace: [
+                {
+                  file: filePath,
+                  line,
+                  description: isEmpty
+                    ? 'Catch block is completely empty'
+                    : 'Catch block exits immediately with empty return, discarding error'
+                }
+              ],
+              recommendation:
+                'Log the caught error with console.error or a logger, or re-throw a standardized ApplicationError.'
+            });
+          }
+        }
+      }
+
+      // Rule: Incomplete AI Stub / Unimplemented Function Detected (PC-STUB-001)
+      if (!isTest) {
+        if (ts.isThrowStatement(node) && node.expression) {
+          const throwText = node.expression.getText(sourceFile);
+          if (/not\s*implemented|todo|implement\s*me|placeholder/i.test(throwText)) {
+            const { line, column } = getLineAndColumn(node.getStart(sourceFile));
+            if (isLineChanged(line)) {
+              findings.push({
+                id: `PC-STUB-${filePath}-${line}`,
+                ruleId: 'PC-STUB-001',
+                category: 'quality',
+                title: 'Incomplete AI Stub / Unimplemented Function Detected',
+                severity: 'HIGH',
+                description: `Function contains unimplemented placeholder stub: '${throwText}'. Code was marked complete by AI but cannot execute in production.`,
+                file: filePath,
+                line,
+                column,
+                snippet: getSnippet(line),
+                evidenceTrace: [
+                  {
+                    file: filePath,
+                    line,
+                    description: `Stub exception '${throwText}' detected in executable code path`
+                  }
+                ],
+                recommendation:
+                  'Implement complete logic before shipping to avoid production runtime exceptions.'
+              });
+            }
+          }
+        }
+      }
+
       ts.forEachChild(node, visit);
     };
 
     ts.forEachChild(sourceFile, visit);
+
+    // Rule: Unimplemented AI TODO Placeholder in Production Code (PC-STUB-001)
+    if (!isTest && changedLinesSet) {
+      const lines = sourceText.split('\n');
+      for (const changedLine of changedLinesSet) {
+        if (changedLine > 0 && changedLine <= lines.length) {
+          const lineContent = lines[changedLine - 1];
+          if (/\/\/\s*(TODO|FIXME):\s*(implement|add logic|placeholder|unimplemented)/i.test(lineContent)) {
+            findings.push({
+              id: `PC-STUB-COMMENT-${filePath}-${changedLine}`,
+              ruleId: 'PC-STUB-001',
+              category: 'quality',
+              title: 'Unimplemented AI TODO Placeholder in Production Code',
+              severity: 'HIGH',
+              description: `Found incomplete implementation placeholder '${lineContent.trim()}'. AI assistant left unfinished stub logic in production code.`,
+              file: filePath,
+              line: changedLine,
+              snippet: getSnippet(changedLine),
+              evidenceTrace: [
+                {
+                  file: filePath,
+                  line: changedLine,
+                  description: `Unfinished implementation marker: ${lineContent.trim()}`
+                }
+              ],
+              recommendation: 'Complete the necessary business logic before merging.'
+            });
+          }
+        }
+      }
+    }
 
     // Rule: Missing Authorization in API routes performing DB queries
     if (isApiRoute) {
@@ -461,6 +654,127 @@ export class RiskEngine {
         getSnippet
       );
       findings.push(...authFindings);
+    }
+
+    // Rule: Test Weakening / Deleted Assertions (PC-TEST-001)
+    if (isTest && fileDiff && fileDiff.hunks) {
+      let deletedAssertions = 0;
+      let addedAssertions = 0;
+      const assertionRegex = /\b(expect\(|assert\(|\.toBe\(|\.toEqual\(|\.toMatch\(|\.toThrow\()/;
+
+      for (const hunk of fileDiff.hunks) {
+        for (const l of hunk.lines) {
+          if (l.startsWith('-') && !l.startsWith('---')) {
+            if (assertionRegex.test(l)) deletedAssertions++;
+          } else if (l.startsWith('+') && !l.startsWith('+++')) {
+            if (assertionRegex.test(l)) addedAssertions++;
+          }
+        }
+      }
+
+      if (deletedAssertions > 0 && addedAssertions < deletedAssertions) {
+        const line = fileDiff.modifiedLineRanges[0]?.start ?? 1;
+        findings.push({
+          id: `PC-TEST-WEAKEN-${filePath}`,
+          ruleId: 'PC-TEST-001',
+          category: 'quality',
+          title: 'Test Weakening: Deleted Test Assertion Detected',
+          severity: 'HIGH',
+          description: `Diff removed ${deletedAssertions} test assertion(s) without equivalent replacements. This pattern often indicates AI attempts to pass tests by removing verification criteria.`,
+          file: filePath,
+          line,
+          snippet: `Deleted assertions: ${deletedAssertions}, Added assertions: ${addedAssertions}`,
+          evidenceTrace: [
+            {
+              file: filePath,
+              line,
+              description: `Net decrease of ${deletedAssertions - addedAssertions} test assertion(s) in test suite`
+            }
+          ],
+          recommendation: 'Restore the original test assertions and fix the underlying implementation code instead of weakening tests.'
+        });
+      }
+    }
+
+    // Rule: Scope Creep & Sensitive File Guard (PC-SCOPE-001)
+    if (fileDiff) {
+      const normalizedPath = filePath.replace(/\\/g, '/');
+      const isSensitiveConfig =
+        /(\.env|\.env\.[a-z0-9]+|package\.json|tsconfig\.json|\.npmrc|\.github\/workflows\/.*\.ya?ml)$/i.test(normalizedPath);
+
+      if (isSensitiveConfig) {
+        const isEnv = /\.env/i.test(normalizedPath);
+        const line = fileDiff.modifiedLineRanges[0]?.start ?? 1;
+        findings.push({
+          id: `PC-SCOPE-${filePath}-${line}`,
+          ruleId: 'PC-SCOPE-001',
+          category: 'security',
+          title: `Sensitive Configuration File Modified (${path.basename(filePath)})`,
+          severity: isEnv ? 'HIGH' : 'MEDIUM',
+          description: `Modifications detected in sensitive root configuration file '${path.basename(filePath)}'. Verify these changes are intentional and not unintended AI scope creep.`,
+          file: filePath,
+          line,
+          snippet: getSnippet(line),
+          evidenceTrace: [
+            {
+              file: filePath,
+              line,
+              description: `Critical config file modified: ${fileDiff.addedLines.length} line(s) added, ${fileDiff.deletedLines.length} line(s) removed`
+            }
+          ],
+          recommendation: 'Carefully review environment variables and dependency changes to prevent credential leakage or supply chain shifts.'
+        });
+      }
+
+      // Rule: Silent Security Field Dropped in Payload (PC-DATA-002)
+      if (fileDiff.hunks) {
+        const criticalFieldRegex = /\b(tenantId|userId|organizationId|orgId|accountId)\s*[:=]/;
+        for (const hunk of fileDiff.hunks) {
+          const deletedCriticalFields: { field: string; line: string }[] = [];
+          const addedText = hunk.lines
+            .filter((l) => l.startsWith('+') && !l.startsWith('+++'))
+            .join('\n');
+
+          for (const l of hunk.lines) {
+            if (l.startsWith('-') && !l.startsWith('---')) {
+              const match = l.match(criticalFieldRegex);
+              if (match) {
+                const fieldName = match[1];
+                const reIntroduced = new RegExp(`\\b${fieldName}\\s*[:=]`).test(addedText);
+                if (!reIntroduced) {
+                  deletedCriticalFields.push({ field: fieldName, line: l });
+                }
+              }
+            }
+          }
+
+          if (deletedCriticalFields.length > 0) {
+            const fieldNames = Array.from(new Set(deletedCriticalFields.map((d) => d.field)));
+            const line = fileDiff.modifiedLineRanges[0]?.start ?? 1;
+            findings.push({
+              id: `PC-DATA-DROP-${filePath}-${line}`,
+              ruleId: 'PC-DATA-002',
+              category: 'security',
+              title: `Silent Security Field Dropped in Payload (${fieldNames.join(', ')})`,
+              severity: 'HIGH',
+              description: `Critical multi-tenant or identity field(s) '${fieldNames.join(
+                ', '
+              )}' were deleted from this code block without replacement. This is a common AI refactoring mistake that causes cross-tenant data leaks.`,
+              file: filePath,
+              line,
+              snippet: deletedCriticalFields.map((d) => d.line).join('\n'),
+              evidenceTrace: deletedCriticalFields.map((d) => ({
+                file: filePath,
+                line,
+                description: `Field '${d.field}' removed from payload in Git diff: ${d.line.trim()}`
+              })),
+              recommendation: `Restore '${fieldNames.join(
+                ', '
+              )}' to ensure tenant and user data isolation.`
+            });
+          }
+        }
+      }
     }
 
     // Deduplicate findings by ID

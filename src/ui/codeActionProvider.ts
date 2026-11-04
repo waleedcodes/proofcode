@@ -106,6 +106,60 @@ export class ProofCodeCodeActionProvider implements vscode.CodeActionProvider {
         sqlAction.diagnostics = [diag];
         actions.push(sqlAction);
       }
+
+      // 5. Quick Fix for PC-REL-008: Unawaited Async Call in Conditional
+      if (diag.code === 'PC-REL-008') {
+        const awaitAction = new vscode.CodeAction(
+          "🛡️ ProofCode: Insert 'await' before async check",
+          vscode.CodeActionKind.QuickFix
+        );
+        awaitAction.isPreferred = true;
+        awaitAction.diagnostics = [diag];
+
+        const awaitEdit = new vscode.WorkspaceEdit();
+        const replacedLine = lineText.replace(
+          /(if\s*\(\s*|while\s*\(\s*|return\s+|\?\s*)([a-zA-Z0-9_$.]+\s*\()/g,
+          '$1await $2'
+        );
+        awaitEdit.replace(document.uri, line.range, replacedLine);
+        awaitAction.edit = awaitEdit;
+        actions.push(awaitAction);
+      }
+
+      // 6. Quick Fix for PC-REL-009: Silent Error Swallowing in Catch Block
+      if (diag.code === 'PC-REL-009') {
+        const logAction = new vscode.CodeAction(
+          '🛡️ ProofCode: Add logger to catch block',
+          vscode.CodeActionKind.QuickFix
+        );
+        logAction.isPreferred = true;
+        logAction.diagnostics = [diag];
+
+        const logEdit = new vscode.WorkspaceEdit();
+        const loggedCatch = lineText.includes('catch')
+          ? lineText.replace(
+              /catch\s*(\([^)]*\))?\s*\{[^}]*\}/,
+              (m) => {
+                const errParam = m.includes('(') ? m.match(/\(([^)]+)\)/)?.[1] || 'error' : 'error';
+                return `catch (${errParam}) {\n${indent}  console.error('Operation failed:', ${errParam});\n${indent}}`;
+              }
+            )
+          : `${indent}  console.error('Operation failed:', error);`;
+        logEdit.replace(document.uri, line.range, loggedCatch);
+        logAction.edit = logEdit;
+        actions.push(logAction);
+      }
+
+      // 7. Quick Fix for PC-SEC-003: Path Traversal
+      if (diag.code === 'PC-SEC-003') {
+        const sanitizeAction = new vscode.CodeAction(
+          '🛡️ ProofCode: Sanitize file path with path.basename()',
+          vscode.CodeActionKind.QuickFix
+        );
+        sanitizeAction.isPreferred = true;
+        sanitizeAction.diagnostics = [diag];
+        actions.push(sanitizeAction);
+      }
     }
 
     return actions;

@@ -71,7 +71,10 @@ export function activate(context: vscode.ExtensionContext): void {
   };
 
   // Verification Runner
-  const runVerification = async (quiet = false): Promise<VerificationReport | null> => {
+  const runVerification = async (
+    quiet = false,
+    forceRunLiveTests?: boolean
+  ): Promise<VerificationReport | null> => {
     const root = getWorkspaceRoot();
     if (!root) {
       if (!quiet) {
@@ -81,7 +84,10 @@ export function activate(context: vscode.ExtensionContext): void {
     }
 
     const config = vscode.workspace.getConfiguration('proofcode');
-    const runLiveTests = config.get<boolean>('runTestsOnVerify', false);
+    const runLiveTests =
+      forceRunLiveTests !== undefined
+        ? forceRunLiveTests
+        : config.get<boolean>('runTestsOnVerify', false);
     const rulesFilePath = config.get<string>('rulesFilePath', '.proofcode/rules.md');
 
     const execute = async (): Promise<VerificationReport | null> => {
@@ -214,6 +220,13 @@ export function activate(context: vscode.ExtensionContext): void {
     await runVerification(false);
   });
 
+  const verifyWithLiveTestsCmd = vscode.commands.registerCommand(
+    'proofcode.verifyWithLiveTests',
+    async () => {
+      await runVerification(false, true);
+    }
+  );
+
   const openDashboardCmd = vscode.commands.registerCommand('proofcode.openDashboard', async () => {
     if (!latestReport) {
       await runVerification(true);
@@ -233,6 +246,9 @@ export function activate(context: vscode.ExtensionContext): void {
           const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(createdPath));
           await vscode.window.showTextDocument(doc);
         }
+      },
+      async () => {
+        await runVerification(false, true);
       }
     );
   });
@@ -299,6 +315,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     verifyCmd,
+    verifyWithLiveTestsCmd,
     openDashboardCmd,
     initRulesCmd,
     openEvidenceCmd,

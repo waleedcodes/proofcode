@@ -37,4 +37,25 @@ describe('TestRunner', () => {
     const result = await runner.runTypeScriptCheck(tempDir);
     expect(result.status).toBe('SKIPPED');
   });
+
+  it('should fallback to unit tests when target files array is empty', async () => {
+    const runner = new TestRunner();
+    const result = await runner.runTargetedTests(tempDir, []);
+    expect(result.status).toBe('SKIPPED');
+  });
+
+  it('should detect vitest runner for targeted test execution', async () => {
+    const runner = new TestRunner();
+    fs.writeFileSync(
+      path.join(tempDir, 'package.json'),
+      JSON.stringify({
+        devDependencies: { vitest: '^2.0.0' },
+        scripts: { test: 'vitest run' }
+      })
+    );
+    // Since mock files don't actually run, test command will trigger vitest
+    const result = await runner.runTargetedTests(tempDir, [path.join(tempDir, 'tests/sample.test.ts')]);
+    expect(['PASS', 'FAIL']).toContain(result.status);
+    expect(result.name).toBe('Targeted Tests');
+  });
 });

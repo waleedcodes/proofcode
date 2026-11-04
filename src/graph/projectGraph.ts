@@ -167,6 +167,10 @@ export class ProjectGraph {
     return this.fileAnalyses.get(filePath);
   }
 
+  public getFileAnalysis(filePath: string): FileAnalysis | undefined {
+    return this.getAnalysis(filePath);
+  }
+
   public getDependents(filePath: string): Set<string> {
     return this.fileDependents.get(filePath) || new Set();
   }

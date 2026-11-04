@@ -9,6 +9,7 @@ export class ProofCodeWebviewPanel {
   private _disposables: vscode.Disposable[] = [];
   private _report: VerificationReport | null = null;
   private _onVerifyRequested: (() => Promise<void>) | null = null;
+  private _onVerifyWithTestsRequested: (() => Promise<void>) | null = null;
   private _onInitRulesRequested: (() => Promise<void>) | null = null;
 
   private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri) {
@@ -23,6 +24,11 @@ export class ProofCodeWebviewPanel {
           case 'verify':
             if (this._onVerifyRequested) {
               await this._onVerifyRequested();
+            }
+            break;
+          case 'verifyWithTests':
+            if (this._onVerifyWithTestsRequested) {
+              await this._onVerifyWithTestsRequested();
             }
             break;
           case 'openEvidence':
@@ -53,7 +59,8 @@ export class ProofCodeWebviewPanel {
     extensionUri: vscode.Uri,
     report: VerificationReport | null,
     onVerify: () => Promise<void>,
-    onInitRules: () => Promise<void>
+    onInitRules: () => Promise<void>,
+    onVerifyWithTests?: () => Promise<void>
   ): ProofCodeWebviewPanel {
     const column = vscode.window.activeTextEditor
       ? vscode.window.activeTextEditor.viewColumn
@@ -64,6 +71,7 @@ export class ProofCodeWebviewPanel {
       ProofCodeWebviewPanel.currentPanel.setReport(report);
       ProofCodeWebviewPanel.currentPanel._onVerifyRequested = onVerify;
       ProofCodeWebviewPanel.currentPanel._onInitRulesRequested = onInitRules;
+      ProofCodeWebviewPanel.currentPanel._onVerifyWithTestsRequested = onVerifyWithTests ?? null;
       return ProofCodeWebviewPanel.currentPanel;
     }
 
@@ -81,6 +89,7 @@ export class ProofCodeWebviewPanel {
     ProofCodeWebviewPanel.currentPanel = new ProofCodeWebviewPanel(panel, extensionUri);
     ProofCodeWebviewPanel.currentPanel._onVerifyRequested = onVerify;
     ProofCodeWebviewPanel.currentPanel._onInitRulesRequested = onInitRules;
+    ProofCodeWebviewPanel.currentPanel._onVerifyWithTestsRequested = onVerifyWithTests ?? null;
     ProofCodeWebviewPanel.currentPanel.setReport(report);
 
     return ProofCodeWebviewPanel.currentPanel;
@@ -893,7 +902,10 @@ export class ProofCodeWebviewPanel {
     </div>
     <div class="header-actions">
       <button id="btn-verify" class="btn btn-primary">
-        ⚡ Run Verification
+        ⚡ Verify Diff
+      </button>
+      <button id="btn-run-tests" class="btn btn-primary" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); border-color: #059669;">
+        🧪 Run Live Tests
       </button>
       <button id="btn-export" class="btn btn-secondary">
         📄 Export Report
@@ -1238,24 +1250,56 @@ export class ProofCodeWebviewPanel {
             checks
               ? `
             <tr>
-              <td><strong>${checks.typescript.name}</strong></td>
-              <td><span class="severity-tag ${checks.typescript.status === 'PASS' ? 'low' : 'high'}">${checks.typescript.status}</span></td>
-              <td>${checks.typescript.message || 'Pass'}</td>
+              <td><strong>${escapeHtml(checks.typescript.name)}</strong></td>
+              <td><span class="severity-tag ${checks.typescript.status === 'PASS' ? 'low' : checks.typescript.status === 'SKIPPED' ? 'medium' : 'high'}">${checks.typescript.status}</span></td>
+              <td>
+                <div>${escapeHtml(checks.typescript.message || 'Pass')} ${checks.typescript.durationMs ? `<span style="opacity: 0.6; font-size: 11px;">(${checks.typescript.durationMs}ms)</span>` : ''}</div>
+                ${checks.typescript.details ? `
+                  <details style="margin-top: 6px;">
+                    <summary style="cursor: pointer; color: var(--accent-color); font-size: 12px; font-weight: 600;">🔍 View TypeScript Output</summary>
+                    <pre style="background: rgba(0,0,0,0.5); padding: 10px; border-radius: 6px; font-family: monospace; font-size: 11px; white-space: pre-wrap; word-break: break-all; margin-top: 6px; max-height: 250px; overflow-y: auto; color: ${checks.typescript.status === 'PASS' ? '#7ee787' : '#ff7b72'};">${escapeHtml(checks.typescript.details)}</pre>
+                  </details>
+                ` : ''}
+              </td>
             </tr>
             <tr>
-              <td><strong>${checks.eslint.name}</strong></td>
-              <td><span class="severity-tag ${checks.eslint.status === 'PASS' ? 'low' : 'medium'}">${checks.eslint.status}</span></td>
-              <td>${checks.eslint.message || 'Pass'}</td>
+              <td><strong>${escapeHtml(checks.eslint.name)}</strong></td>
+              <td><span class="severity-tag ${checks.eslint.status === 'PASS' ? 'low' : checks.eslint.status === 'SKIPPED' ? 'medium' : 'high'}">${checks.eslint.status}</span></td>
+              <td>
+                <div>${escapeHtml(checks.eslint.message || 'Pass')} ${checks.eslint.durationMs ? `<span style="opacity: 0.6; font-size: 11px;">(${checks.eslint.durationMs}ms)</span>` : ''}</div>
+                ${checks.eslint.details ? `
+                  <details style="margin-top: 6px;">
+                    <summary style="cursor: pointer; color: var(--accent-color); font-size: 12px; font-weight: 600;">🔍 View Linter Output</summary>
+                    <pre style="background: rgba(0,0,0,0.5); padding: 10px; border-radius: 6px; font-family: monospace; font-size: 11px; white-space: pre-wrap; word-break: break-all; margin-top: 6px; max-height: 250px; overflow-y: auto; color: ${checks.eslint.status === 'PASS' ? '#7ee787' : '#ff7b72'};">${escapeHtml(checks.eslint.details)}</pre>
+                  </details>
+                ` : ''}
+              </td>
             </tr>
             <tr>
-              <td><strong>${checks.unitTests.name}</strong></td>
+              <td><strong>${escapeHtml(checks.unitTests.name)}</strong></td>
               <td><span class="severity-tag ${checks.unitTests.status === 'PASS' ? 'low' : checks.unitTests.status === 'SKIPPED' ? 'medium' : 'high'}">${checks.unitTests.status}</span></td>
-              <td>${checks.unitTests.message || 'Pass'}</td>
+              <td>
+                <div>${escapeHtml(checks.unitTests.message || 'Pass')} ${checks.unitTests.durationMs ? `<span style="opacity: 0.6; font-size: 11px;">(${checks.unitTests.durationMs}ms)</span>` : ''}</div>
+                ${checks.unitTests.details ? `
+                  <details style="margin-top: 6px;" open>
+                    <summary style="cursor: pointer; color: var(--accent-color); font-size: 12px; font-weight: 600;">🔍 View Exact Test Output & Stack Trace</summary>
+                    <pre style="background: rgba(0,0,0,0.5); padding: 10px; border-radius: 6px; font-family: monospace; font-size: 11px; white-space: pre-wrap; word-break: break-all; margin-top: 6px; max-height: 250px; overflow-y: auto; color: ${checks.unitTests.status === 'PASS' ? '#7ee787' : '#ff7b72'};">${escapeHtml(checks.unitTests.details)}</pre>
+                  </details>
+                ` : ''}
+              </td>
             </tr>
             <tr>
-              <td><strong>${checks.build.name}</strong></td>
+              <td><strong>${escapeHtml(checks.build.name)}</strong></td>
               <td><span class="severity-tag ${checks.build.status === 'PASS' ? 'low' : checks.build.status === 'SKIPPED' ? 'medium' : 'high'}">${checks.build.status}</span></td>
-              <td>${checks.build.message || 'Pass'}</td>
+              <td>
+                <div>${escapeHtml(checks.build.message || 'Pass')} ${checks.build.durationMs ? `<span style="opacity: 0.6; font-size: 11px;">(${checks.build.durationMs}ms)</span>` : ''}</div>
+                ${checks.build.details ? `
+                  <details style="margin-top: 6px;">
+                    <summary style="cursor: pointer; color: var(--accent-color); font-size: 12px; font-weight: 600;">🔍 View Build Output</summary>
+                    <pre style="background: rgba(0,0,0,0.5); padding: 10px; border-radius: 6px; font-family: monospace; font-size: 11px; white-space: pre-wrap; word-break: break-all; margin-top: 6px; max-height: 250px; overflow-y: auto; color: ${checks.build.status === 'PASS' ? '#7ee787' : '#ff7b72'};">${escapeHtml(checks.build.details)}</pre>
+                  </details>
+                ` : ''}
+              </td>
             </tr>
           `
               : '<tr><td colspan="3">No live checks configured yet.</td></tr>'
@@ -1283,6 +1327,15 @@ export class ProofCodeWebviewPanel {
     // Actions
     document.getElementById('btn-verify')?.addEventListener('click', () => {
       vscode.postMessage({ type: 'verify' });
+    });
+
+    document.getElementById('btn-run-tests')?.addEventListener('click', () => {
+      const btn = document.getElementById('btn-run-tests');
+      if (btn) {
+        btn.innerText = '⏳ Running Tests...';
+        btn.style.opacity = '0.7';
+      }
+      vscode.postMessage({ type: 'verifyWithTests' });
     });
 
     document.getElementById('btn-export')?.addEventListener('click', () => {
