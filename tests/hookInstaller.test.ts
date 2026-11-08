@@ -89,3 +89,4 @@ describe('HookInstaller', () => {
     expect(finalContent).not.toContain('proofcode verify');
   });
 });
+

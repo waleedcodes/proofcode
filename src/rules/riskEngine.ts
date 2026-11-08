@@ -91,6 +91,96 @@ export class RiskEngine {
       filePath.includes('api/') ||
       filePath.includes('routes/');
 
+    const localSyncFunctions = new Set<string>();
+    const localAsyncFunctions = new Set<string>();
+
+    const collectLocalFunctions = (n: ts.Node) => {
+      if (ts.isFunctionDeclaration(n) && n.name) {
+        const isAsync = n.modifiers?.some((m) => m.kind === ts.SyntaxKind.AsyncKeyword) ?? false;
+        if (isAsync) {
+          localAsyncFunctions.add(n.name.text);
+        } else {
+          localSyncFunctions.add(n.name.text);
+        }
+      } else if (ts.isVariableStatement(n)) {
+        for (const decl of n.declarationList.declarations) {
+          if (ts.isIdentifier(decl.name) && decl.initializer) {
+            if (ts.isArrowFunction(decl.initializer) || ts.isFunctionExpression(decl.initializer)) {
+              const isAsync =
+                decl.initializer.modifiers?.some((m) => m.kind === ts.SyntaxKind.AsyncKeyword) ?? false;
+              if (isAsync) {
+                localAsyncFunctions.add(decl.name.text);
+              } else {
+                localSyncFunctions.add(decl.name.text);
+              }
+            }
+          }
+        }
+      }
+      ts.forEachChild(n, collectLocalFunctions);
+    };
+    collectLocalFunctions(sourceFile);
+
+    const SYNC_BUILTIN_METHODS = new Set([
+      'has',
+      'includes',
+      'startsWith',
+      'endsWith',
+      'every',
+      'some',
+      'filter',
+      'map',
+      'find',
+      'findIndex',
+      'indexOf',
+      'lastIndexOf',
+      'test',
+      'match',
+      'matchAll',
+      'search',
+      'replace',
+      'replaceAll',
+      'split',
+      'slice',
+      'substring',
+      'trim',
+      'trimStart',
+      'trimEnd',
+      'charAt',
+      'charCodeAt',
+      'concat',
+      'join',
+      'keys',
+      'values',
+      'entries',
+      'push',
+      'pop',
+      'shift',
+      'unshift',
+      'get',
+      'set',
+      'add',
+      'delete',
+      'clear',
+      'size',
+      'length',
+      'isArray',
+      'isInteger',
+      'isNaN',
+      'isFinite',
+      'isSafeInteger',
+      'existsSync',
+      'statSync',
+      'lstatSync',
+      'readFileSync',
+      'writeFileSync',
+      'resolve',
+      'join',
+      'dirname',
+      'basename',
+      'extname'
+    ]);
+
     const visit = (node: ts.Node) => {
       // Rule: SQL Injection Detection
       if (ts.isCallExpression(node)) {
@@ -318,8 +408,11 @@ export class RiskEngine {
         if ((isFsOp || isPathOp) && node.arguments.length > 0) {
           const hasUnvalidatedInput = node.arguments.some((arg) => {
             const argStr = arg.getText(sourceFile);
+            const isUserControlled =
+              /\b(req\.query|req\.params|req\.body|params\.|searchParams\.|userInput|userPath)\b/i.test(argStr) ||
+              (isApiRoute && /\b(query\.|filePath|fileName|filename)\b/i.test(argStr));
             return (
-              /\b(req\.query|req\.params|req\.body|params\.|searchParams\.|query\.|userInput|userPath|filePath|fileName|filename)\b/i.test(argStr) &&
+              isUserControlled &&
               !argStr.includes('path.basename(') &&
               !argStr.includes('basename(')
             );
@@ -488,11 +581,60 @@ export class RiskEngine {
           if (ts.isCallExpression(expr)) {
             if (!ts.isAwaitExpression(expr.parent)) {
               const callText = expr.expression.getText(sourceFile);
-              const isAsyncCheckName =
-                /^(check|verify|validate|auth|authenticate|has|is|can|find|fetch|query)[A-Z0-9_]*/i.test(callText) ||
-                /\b(check|verify|validate|auth|authenticate|has|is|can)\b/i.test(callText);
+              let shouldFlag = false;
 
-              if (isAsyncCheckName) {
+              if (ts.isPropertyAccessExpression(expr.expression)) {
+                const propName = expr.expression.name.text;
+                const targetText = expr.expression.expression.getText(sourceFile);
+
+                const isBuiltinTarget =
+                  targetText === 'ts' ||
+                  targetText.startsWith('ts.') ||
+                  targetText === 'path' ||
+                  targetText.startsWith('path.') ||
+                  targetText === 'Array' ||
+                  targetText === 'Object' ||
+                  targetText === 'String' ||
+                  targetText === 'Number' ||
+                  targetText === 'Boolean' ||
+                  targetText === 'Math' ||
+                  targetText === 'JSON' ||
+                  targetText === 'Reflect' ||
+                  targetText === 'Date' ||
+                  targetText === 'console' ||
+                  targetText === 'process';
+
+                if (
+                  !isBuiltinTarget &&
+                  !SYNC_BUILTIN_METHODS.has(propName) &&
+                  !propName.endsWith('Sync') &&
+                  !localSyncFunctions.has(propName)
+                ) {
+                  if (
+                    localAsyncFunctions.has(propName) ||
+                    /(async|Async)\b/.test(propName) ||
+                    /^(verify|authenticate|query|fetch)[A-Z0-9_]*/i.test(propName)
+                  ) {
+                    shouldFlag = true;
+                  }
+                }
+              } else if (ts.isIdentifier(expr.expression)) {
+                const funcName = expr.expression.text;
+                const isGlobalSync =
+                  ['isLineChanged', 'isTestFile', 'isApiRoute', 'getSnippet', 'getLineAndColumn', 'parseInt', 'parseFloat', 'isNaN', 'isFinite', 'Boolean', 'String', 'Number', 'Array', 'Object', 'Error'].includes(funcName);
+
+                if (!isGlobalSync && !localSyncFunctions.has(funcName)) {
+                  if (
+                    localAsyncFunctions.has(funcName) ||
+                    /(async|Async)\b/.test(funcName) ||
+                    /^(check|verify|validate|auth|authenticate|fetch|query)[A-Z0-9_]*/i.test(funcName)
+                  ) {
+                    shouldFlag = true;
+                  }
+                }
+              }
+
+              if (shouldFlag) {
                 const { line, column } = getLineAndColumn(expr.getStart(sourceFile));
                 if (isLineChanged(line)) {
                   findings.push({
@@ -608,10 +750,127 @@ export class RiskEngine {
         }
       }
 
+      // Rule: Dangerous Type Assertion Bypass (PC-TYPE-001)
+      if (
+        (ts.isAsExpression(node) && node.type.kind === ts.SyntaxKind.AnyKeyword) ||
+        (ts.isTypeAssertionExpression(node) && node.type.kind === ts.SyntaxKind.AnyKeyword)
+      ) {
+        const { line, column } = getLineAndColumn(node.getStart(sourceFile));
+        if (isLineChanged(line)) {
+          findings.push({
+            id: `PC-TYPE-ANY-${filePath}-${line}`,
+            ruleId: 'PC-TYPE-001',
+            category: 'quality',
+            title: "Dangerous Type Assertion Bypass ('as any')",
+            severity: 'MEDIUM',
+            description:
+              "Diff introduced an unsafe 'as any' type assertion. This pattern is commonly used by AI assistants to suppress compiler errors rather than fixing underlying type mismatches.",
+            file: filePath,
+            line,
+            column,
+            snippet: getSnippet(line),
+            evidenceTrace: [
+              {
+                file: filePath,
+                line,
+                description: `Expression '${node.expression.getText(sourceFile)}' forcefully coerced to 'any'`
+              }
+            ],
+            recommendation:
+              "Replace 'any' with a precise interface or union type, or fix the mismatch at the call-site."
+          });
+        }
+      }
+
+      // Rule: Phantom / Hallucinated Dependency Imported (PC-IMPORT-001)
+      if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
+        const importPath = node.moduleSpecifier.text;
+        if (
+          !importPath.startsWith('.') &&
+          !importPath.startsWith('/') &&
+          !importPath.startsWith('@/') &&
+          !importPath.startsWith('~/') &&
+          !importPath.startsWith('#/')
+        ) {
+          const isNodeBuiltin =
+            /^(node:)?(fs|path|os|crypto|util|events|http|https|stream|child_process|url|buffer|assert|zlib|worker_threads|perf_hooks|readline|string_decoder|timers|net|tls|dgram|dns|v8|vm|async_hooks|diagnostics_channel|process)$/.test(
+              importPath
+            ) || importPath === 'vscode';
+
+          if (!isNodeBuiltin) {
+            const pkgName = importPath.startsWith('@')
+              ? importPath.split('/').slice(0, 2).join('/')
+              : importPath.split('/')[0];
+
+            const deps = RiskEngine.getInstalledDependencies(filePath);
+            if (deps && !deps.has(pkgName) && !deps.has(`@types/${pkgName}`)) {
+              const { line, column } = getLineAndColumn(node.getStart(sourceFile));
+              if (isLineChanged(line)) {
+                findings.push({
+                  id: `PC-IMPORT-PHANTOM-${filePath}-${line}`,
+                  ruleId: 'PC-IMPORT-001',
+                  category: 'reliability',
+                  title: `Phantom / Uninstalled Dependency Imported ('${pkgName}')`,
+                  severity: 'HIGH',
+                  description: `Module '${importPath}' is imported, but '${pkgName}' is not listed in package.json. AI coding assistants frequently hallucinate third-party package names, causing runtime module resolution crashes.`,
+                  file: filePath,
+                  line,
+                  column,
+                  snippet: getSnippet(line),
+                  evidenceTrace: [
+                    {
+                      file: filePath,
+                      line,
+                      description: `Import from uninstalled package '${pkgName}'`
+                    }
+                  ],
+                  recommendation: `Install '${pkgName}' via your package manager (e.g. npm install ${pkgName}) or remove the hallucinated import.`
+                });
+              }
+            }
+          }
+        }
+      }
+
       ts.forEachChild(node, visit);
     };
 
     ts.forEachChild(sourceFile, visit);
+
+    // Rule: Suppress Directive Detected (@ts-ignore / @ts-nocheck) (PC-TYPE-001)
+    if (!isTest && changedLinesSet) {
+      const lines = sourceText.split('\n');
+      for (const changedLine of changedLinesSet) {
+        if (changedLine > 0 && changedLine <= lines.length) {
+          const lineContent = lines[changedLine - 1];
+          if (/\/\/\s*@ts-(ignore|nocheck|expect-error)\b/.test(lineContent)) {
+            const isNoCheck = lineContent.includes('@ts-nocheck');
+            findings.push({
+              id: `PC-TYPE-IGNORE-${filePath}-${changedLine}`,
+              ruleId: 'PC-TYPE-001',
+              category: 'quality',
+              title: isNoCheck
+                ? "TypeScript Type Checking Disabled ('@ts-nocheck')"
+                : "TypeScript Diagnostic Suppressed ('@ts-ignore')",
+              severity: isNoCheck ? 'HIGH' : 'MEDIUM',
+              description: `Found '${lineContent.trim()}' in modified code. AI models frequently silence genuine type errors using compiler suppression directives instead of fixing the underlying issue.`,
+              file: filePath,
+              line: changedLine,
+              snippet: getSnippet(changedLine),
+              evidenceTrace: [
+                {
+                  file: filePath,
+                  line: changedLine,
+                  description: `Compiler check disabled: ${lineContent.trim()}`
+                }
+              ],
+              recommendation:
+                'Remove the suppression directive and address the genuine TypeScript diagnostic.'
+            });
+          }
+        }
+      }
+    }
 
     // Rule: Unimplemented AI TODO Placeholder in Production Code (PC-STUB-001)
     if (!isTest && changedLinesSet) {
@@ -1077,6 +1336,32 @@ export class RiskEngine {
         });
       }
     }
+  }
+
+  public static getInstalledDependencies(filePath: string): Set<string> | null {
+    let dir = path.dirname(path.resolve(filePath));
+    let prev = '';
+    while (dir !== prev) {
+      const pkgPath = path.join(dir, 'package.json');
+      if (fs.existsSync(pkgPath)) {
+        try {
+          const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+          return new Set<string>([
+            ...Object.keys(pkg.dependencies || {}),
+            ...Object.keys(pkg.devDependencies || {}),
+            ...Object.keys(pkg.peerDependencies || {})
+          ]);
+        } catch (err) {
+          if (process.env.DEBUG) {
+            console.warn('[ProofCode] Failed to parse package.json at', pkgPath, err);
+          }
+          return null;
+        }
+      }
+      prev = dir;
+      dir = path.dirname(dir);
+    }
+    return null;
   }
 
   public static isTestFile(filePath: string): boolean {

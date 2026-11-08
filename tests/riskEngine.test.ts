@@ -1,3 +1,4 @@
+import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { RiskEngine } from '../src/rules/riskEngine';
 
@@ -319,5 +320,53 @@ export function calculateTax(amount: number): number {
     expect(dropRisk?.severity).toBe('HIGH');
     expect(dropRisk?.title).toContain('Silent Security Field Dropped');
     expect(dropRisk?.description).toContain('tenantId');
+  });
+
+  it('should detect unsafe type assertion bypass (as any) (PC-TYPE-001)', () => {
+    const code = `
+export function formatData(input: unknown) {
+  const data = input as any;
+  return data.value;
+}
+`;
+    const findings = RiskEngine.analyzeFile('/src/types.ts', code);
+    const typeRisk = findings.find((f) => f.ruleId === 'PC-TYPE-001' && f.title.includes('as any'));
+    expect(typeRisk).toBeDefined();
+    expect(typeRisk?.severity).toBe('MEDIUM');
+  });
+
+  it('should detect compiler suppression directives (@ts-ignore / @ts-nocheck) (PC-TYPE-001)', () => {
+    const code = `
+// @ts-ignore
+const x: number = "hello";
+`;
+    const fakeDiff = {
+      oldPath: 'src/ignore.ts',
+      newPath: 'src/ignore.ts',
+      isNew: false,
+      isDeleted: false,
+      isRenamed: false,
+      hunks: [],
+      addedLines: [2],
+      deletedLines: [],
+      modifiedLineRanges: [{ start: 2, end: 2 }]
+    };
+
+    const findings = RiskEngine.analyzeFile('src/ignore.ts', code, fakeDiff);
+    const ignoreRisk = findings.find((f) => f.ruleId === 'PC-TYPE-001' && f.title.includes('@ts-ignore'));
+    expect(ignoreRisk).toBeDefined();
+    expect(ignoreRisk?.severity).toBe('MEDIUM');
+  });
+
+  it('should detect phantom / hallucinated NPM package imports (PC-IMPORT-001)', () => {
+    const code = `
+import { hallucinatedFunc } from 'non-existent-ai-package-12345';
+export function test() { return hallucinatedFunc(); }
+`;
+    const findings = RiskEngine.analyzeFile(path.resolve(__dirname, '../src/sample.ts'), code);
+    const importRisk = findings.find((f) => f.ruleId === 'PC-IMPORT-001');
+    expect(importRisk).toBeDefined();
+    expect(importRisk?.severity).toBe('HIGH');
+    expect(importRisk?.title).toContain('non-existent-ai-package-12345');
   });
 });
