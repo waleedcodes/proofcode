@@ -56,6 +56,7 @@ export class CodeActionKind {
 export class WorkspaceEdit {
   public replace(_uri: any, _range: Range, _newText: string) {}
   public insert(_uri: any, _position: Position, _newText: string) {}
+  public delete(_uri: any, _range: Range) {}
 }
 
 export class CodeAction {

@@ -752,8 +752,9 @@ export class RiskEngine {
 
       // Rule: Dangerous Type Assertion Bypass (PC-TYPE-001)
       if (
-        (ts.isAsExpression(node) && node.type.kind === ts.SyntaxKind.AnyKeyword) ||
-        (ts.isTypeAssertionExpression(node) && node.type.kind === ts.SyntaxKind.AnyKeyword)
+        !isTest &&
+        ((ts.isAsExpression(node) && node.type.kind === ts.SyntaxKind.AnyKeyword) ||
+          (ts.isTypeAssertionExpression(node) && node.type.kind === ts.SyntaxKind.AnyKeyword))
       ) {
         const { line, column } = getLineAndColumn(node.getStart(sourceFile));
         if (isLineChanged(line)) {
@@ -783,7 +784,7 @@ export class RiskEngine {
       }
 
       // Rule: Phantom / Hallucinated Dependency Imported (PC-IMPORT-001)
-      if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
+      if (!isTest && ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
         const importPath = node.moduleSpecifier.text;
         if (
           !importPath.startsWith('.') &&

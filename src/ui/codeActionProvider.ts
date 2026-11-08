@@ -160,6 +160,63 @@ export class ProofCodeCodeActionProvider implements vscode.CodeActionProvider {
         sanitizeAction.diagnostics = [diag];
         actions.push(sanitizeAction);
       }
+
+      // 8. Quick Fix for PC-TYPE-001: Dangerous Type Assertion Bypass
+      if (diag.code === 'PC-TYPE-001') {
+        if (lineText.includes('as any')) {
+          const typeAction = new vscode.CodeAction(
+            "🛡️ ProofCode: Replace unsafe 'as any' with 'as unknown'",
+            vscode.CodeActionKind.QuickFix
+          );
+          typeAction.isPreferred = true;
+          typeAction.diagnostics = [diag];
+
+          const typeEdit = new vscode.WorkspaceEdit();
+          const replaced = lineText.replace(/\bas\s+any\b/g, 'as unknown');
+          typeEdit.replace(document.uri, line.range, replaced);
+          typeAction.edit = typeEdit;
+          actions.push(typeAction);
+        } else if (/\/\/\s*@ts-(ignore|nocheck|expect-error)\b/.test(lineText)) {
+          const removeSuppressionAction = new vscode.CodeAction(
+            '🛡️ ProofCode: Remove TypeScript suppression directive',
+            vscode.CodeActionKind.QuickFix
+          );
+          removeSuppressionAction.isPreferred = true;
+          removeSuppressionAction.diagnostics = [diag];
+
+          const supEdit = new vscode.WorkspaceEdit();
+          // Delete entire line if it only contains the comment, else remove comment
+          if (/^\s*\/\/\s*@ts-(ignore|nocheck|expect-error)\b[^\n]*$/.test(lineText)) {
+            supEdit.delete(
+              document.uri,
+              new vscode.Range(lineIdx, 0, Math.min(document.lineCount - 1, lineIdx + 1), 0)
+            );
+          } else {
+            const stripped = lineText.replace(/\/\/\s*@ts-(ignore|nocheck|expect-error)\b[^\n]*/, '').trimEnd();
+            supEdit.replace(document.uri, line.range, stripped);
+          }
+          removeSuppressionAction.edit = supEdit;
+          actions.push(removeSuppressionAction);
+        }
+      }
+
+      // 9. Quick Fix for PC-IMPORT-001: Phantom / Hallucinated Dependency
+      if (diag.code === 'PC-IMPORT-001') {
+        const removeImportAction = new vscode.CodeAction(
+          '🛡️ ProofCode: Remove uninstalled/phantom import statement',
+          vscode.CodeActionKind.QuickFix
+        );
+        removeImportAction.isPreferred = true;
+        removeImportAction.diagnostics = [diag];
+
+        const importEdit = new vscode.WorkspaceEdit();
+        importEdit.delete(
+          document.uri,
+          new vscode.Range(lineIdx, 0, Math.min(document.lineCount - 1, lineIdx + 1), 0)
+        );
+        removeImportAction.edit = importEdit;
+        actions.push(removeImportAction);
+      }
     }
 
     return actions;

@@ -3,6 +3,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { emitGitHubAnnotations } from '../src/cli';
+import { ReportFormatter } from '../src/engine/reportFormatter';
 import { VerificationReport } from '../src/types';
 
 describe('ProofCode CLI', () => {
@@ -115,5 +116,38 @@ describe('ProofCode CLI', () => {
 
     fs.unlinkSync(tmpSummary);
     delete process.env.GITHUB_STEP_SUMMARY;
+  });
+
+  it('should support formatting markdown summary for pr-summary command', () => {
+    const mockReport: VerificationReport = {
+      timestamp: new Date().toISOString(),
+      repoRoot: '/workspace',
+      branch: 'main',
+      verdict: 'READY_TO_SHIP',
+      score: { total: 100, deductions: [], breakdown: { risksDeduction: 0, impactDeduction: 0, testsDeduction: 0, rulesDeduction: 0 } },
+      summary: { filesChanged: 2, linesAdded: 25, linesDeleted: 5, symbolsAffected: 1, apiRoutesAffected: 0, highRiskCount: 0, mediumRiskCount: 0, lowRiskCount: 0, testFailuresCount: 0 },
+      risks: [],
+      rules: [],
+      impact: {
+        changedFiles: ['src/index.ts', 'src/utils.ts'],
+        changedSymbols: [],
+        affectedFiles: [],
+        affectedCallers: [],
+        affectedRoutes: [],
+        totalCallersCount: 0,
+        untestedCallersCount: 0
+      },
+      checks: {
+        typescript: { name: 'TS', status: 'PASS' },
+        eslint: { name: 'ESLint', status: 'PASS' },
+        unitTests: { name: 'Unit Tests', status: 'PASS' },
+        build: { name: 'Build', status: 'PASS' }
+      }
+    };
+
+    const md = ReportFormatter.toMarkdown(mockReport);
+    expect(md).toContain('ProofCode Verification Report');
+    expect(md).toContain('READY TO SHIP');
+    expect(md).toContain('100%');
   });
 });

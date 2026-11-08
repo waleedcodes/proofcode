@@ -60,6 +60,9 @@ export async function runCli(): Promise<void> {
   const isCi = args.includes('--ci') || args.includes('--github-actions');
   const isStrict = args.includes('--strict');
 
+  const outputIdx = args.findIndex((a) => a === '--output' || a === '-o');
+  const outputFile = outputIdx !== -1 && args[outputIdx + 1] ? args[outputIdx + 1] : undefined;
+
   if (isHelp) {
     console.log(`
 ProofCode CLI - Code Change Verification
@@ -70,6 +73,7 @@ Usage:
 
 Commands:
   verify [dir]         Verify working tree or git diff (default: current directory)
+  pr-summary [dir]     Generate Markdown summary ready for GitHub PR comments
   install-hook [dir]   Install deterministic pre-commit hook in .git/hooks/pre-commit
   uninstall-hook [dir] Uninstall ProofCode pre-commit hook
   init [dir]           Initialize default .proofcode/rules.md in target project
@@ -82,11 +86,13 @@ Options:
   --strict       Fail with exit code 1 if score < 75% or needs review
   --json         Output report as structured JSON
   --markdown, -m Output report as formatted GitHub Markdown
+  -o, --output   Write report directly to specified file (e.g. -o pr-summary.md)
   --help, -h     Show this help message
 
 Examples:
   proofcode verify
   proofcode verify --staged
+  proofcode pr-summary -o pr-comment.md
   proofcode install-hook
   proofcode verify ./examples/demo-app
   proofcode verify --staged --ci
@@ -95,8 +101,18 @@ Examples:
     process.exit(0);
   }
 
-  // Parse positional arguments for command and target directory
-  const nonFlagArgs = args.filter((a) => !a.startsWith('-'));
+  // Parse positional arguments for command and target directory (skipping flag arguments)
+  const nonFlagArgs: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg.startsWith('-')) {
+      if (arg === '--output' || arg === '-o') {
+        i++; // Skip the option parameter
+      }
+      continue;
+    }
+    nonFlagArgs.push(arg);
+  }
   let command = 'verify';
   let targetPath = process.cwd();
 
@@ -107,7 +123,8 @@ Examples:
       first === 'rules' ||
       first === 'install-hook' ||
       first === 'hook' ||
-      first === 'uninstall-hook'
+      first === 'uninstall-hook' ||
+      first === 'pr-summary'
     ) {
       command = first;
       if (nonFlagArgs[1]) {
@@ -178,12 +195,20 @@ Examples:
       runLiveTests: isLive
     });
 
+    let outputText = '';
     if (isJson) {
-      console.log(ReportFormatter.toJson(report));
-    } else if (isMarkdown) {
-      console.log(ReportFormatter.toMarkdown(report));
+      outputText = ReportFormatter.toJson(report);
+    } else if (isMarkdown || command === 'pr-summary') {
+      outputText = ReportFormatter.toMarkdown(report);
     } else {
-      console.log(ReportFormatter.toTerminal(report));
+      outputText = ReportFormatter.toTerminal(report);
+    }
+
+    if (outputFile) {
+      fs.writeFileSync(path.resolve(process.cwd(), outputFile), outputText, 'utf8');
+      console.log(`\n📄 Report written to: ${outputFile}\n`);
+    } else {
+      console.log(outputText);
     }
 
     if (isCi) {

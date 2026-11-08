@@ -98,4 +98,64 @@ describe('ProofCodeCodeActionProvider', () => {
     expect(actions[0].title).toContain('session authentication guard');
     expect(actions[0].edit).toBeDefined();
   });
+
+  it('should provide QuickFix for dangerous type assertion bypass (PC-TYPE-001)', () => {
+    const provider = new ProofCodeCodeActionProvider();
+    const docWithAny: any = {
+      uri: vscode.Uri.file('/src/sample.ts'),
+      lineCount: 10,
+      lineAt: () => ({
+        text: '  const payload = raw as any;',
+        range: new vscode.Range(2, 0, 2, 29)
+      })
+    };
+    const diag = new vscode.Diagnostic(
+      new vscode.Range(2, 18, 2, 28),
+      "[PC-TYPE-001] Dangerous Type Assertion Bypass ('as any')",
+      vscode.DiagnosticSeverity.Warning
+    );
+    diag.source = 'ProofCode';
+    diag.code = 'PC-TYPE-001';
+
+    const actions = provider.provideCodeActions(
+      docWithAny,
+      new vscode.Range(2, 0, 2, 0),
+      { diagnostics: [diag] } as any,
+      {} as any
+    );
+
+    expect(actions.length).toBe(1);
+    expect(actions[0].title).toContain("Replace unsafe 'as any' with 'as unknown'");
+    expect(actions[0].edit).toBeDefined();
+  });
+
+  it('should provide QuickFix for phantom / uninstalled import (PC-IMPORT-001)', () => {
+    const provider = new ProofCodeCodeActionProvider();
+    const docWithImport: any = {
+      uri: vscode.Uri.file('/src/sample.ts'),
+      lineCount: 10,
+      lineAt: () => ({
+        text: "import { hallucinate } from 'fake-dep';",
+        range: new vscode.Range(0, 0, 0, 39)
+      })
+    };
+    const diag = new vscode.Diagnostic(
+      new vscode.Range(0, 0, 0, 39),
+      "[PC-IMPORT-001] Phantom / Uninstalled Dependency Imported ('fake-dep')",
+      vscode.DiagnosticSeverity.Error
+    );
+    diag.source = 'ProofCode';
+    diag.code = 'PC-IMPORT-001';
+
+    const actions = provider.provideCodeActions(
+      docWithImport,
+      new vscode.Range(0, 0, 0, 0),
+      { diagnostics: [diag] } as any,
+      {} as any
+    );
+
+    expect(actions.length).toBe(1);
+    expect(actions[0].title).toContain('Remove uninstalled/phantom import');
+    expect(actions[0].edit).toBeDefined();
+  });
 });
