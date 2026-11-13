@@ -69,3 +69,4 @@ describe('CiInstaller', () => {
     expect(content).toContain('ProofCode Verification');
   });
 });
+
