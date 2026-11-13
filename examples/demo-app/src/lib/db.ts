@@ -11,6 +11,8 @@ export interface Order {
 }
 
 export const db = {
+  // AI flaw: Unchecked non-null assertion on environment variable (PC-ENV-001)
+  connectionString: process.env.DATABASE_URL!,
   user: {
     findUnique: async (query: { where: { id: string } }) => {
       return { id: query.where.id, email: 'alex@example.com', passwordHash: '$2b$10$e8...' };

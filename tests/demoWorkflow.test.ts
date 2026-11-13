@@ -7,11 +7,11 @@ describe('Killer Workflow Demo Fixture', () => {
     const demoDir = path.resolve(__dirname, '../examples/demo-app');
     const engine = new ProofCodeEngine(demoDir);
 
-    const report = await engine.verify();
+    const report = await engine.verify({ allFiles: true });
 
     expect(report).toBeDefined();
     expect(report.verdict).toBe('BLOCKED');
-    expect(report.summary.highRiskCount).toBeGreaterThanOrEqual(1);
+    expect(report.summary.highRiskCount).toBeGreaterThanOrEqual(3);
 
     // Verify SQL injection detection
     const sqlRisk = report.risks.find((r) => r.ruleId === 'PC-SEC-001');
@@ -23,6 +23,26 @@ describe('Killer Workflow Demo Fixture', () => {
       (r) => r.ruleId === 'PC-AUTH-001' && r.file.includes('orders')
     );
     expect(authRisk).toBeDefined();
+
+    // Verify Unawaited Async Check in Conditional (PC-REL-008)
+    const promiseRisk = report.risks.find((r) => r.ruleId === 'PC-REL-008');
+    expect(promiseRisk).toBeDefined();
+
+    // Verify Direct React State Mutation (PC-MUT-001)
+    const mutRisk = report.risks.find((r) => r.ruleId === 'PC-MUT-001');
+    expect(mutRisk).toBeDefined();
+
+    // Verify Type Assertion Bypass (PC-TYPE-001)
+    const typeRisk = report.risks.find((r) => r.ruleId === 'PC-TYPE-001');
+    expect(typeRisk).toBeDefined();
+
+    // Verify Unchecked Environment Variable Access (PC-ENV-001)
+    const envRisk = report.risks.find((r) => r.ruleId === 'PC-ENV-001');
+    expect(envRisk).toBeDefined();
+
+    // Verify Phantom Package Import (PC-IMPORT-001)
+    const importRisk = report.risks.find((r) => r.ruleId === 'PC-IMPORT-001');
+    expect(importRisk).toBeDefined();
 
     // Verify Rule Violations
     const passwordHashViolation = report.rules.find((r) =>

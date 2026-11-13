@@ -133,6 +133,9 @@ proofcode install-hook
 # Install GitHub Actions workflow (.github/workflows/proofcode.yml)
 proofcode init-ci
 
+# Generate custom configuration (.proofcode/config.json)
+proofcode init-config
+
 # CI Mode: Emit GitHub Actions annotations and append to Step Summary
 proofcode verify --ci --strict
 
@@ -186,7 +189,37 @@ CRITICAL FINDINGS:
 
 ---
 
-## ⚙️ Configuration: `.proofcode/rules.md`
+## ⚙️ Configuration: `.proofcode/config.json`
+
+ProofCode supports custom project configuration via `.proofcode/config.json`, `proofcode.config.json`, or a `"proofcode"` key in `package.json`:
+
+```json
+{
+  "thresholds": {
+    "minScore": 75,
+    "blockOnHighRisk": true
+  },
+  "ignore": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/.git/**"
+  ],
+  "rules": {
+    "PC-REL-008": "error",
+    "PC-TYPE-001": "warn",
+    "PC-MUT-001": "error",
+    "PC-ENV-001": "error",
+    "PC-IMPORT-001": "error"
+  }
+}
+```
+
+Run `proofcode init-config` to quickly generate this file in your project. Rule overrides accept `"off"` (ignore), `"warn"` / `"MEDIUM"`, or `"error"` / `"HIGH"`.
+
+---
+
+## 📐 Architectural Rules: `.proofcode/rules.md`
 
 Define custom architectural guardrails for your repository in `.proofcode/rules.md`:
 
@@ -214,7 +247,7 @@ Define custom architectural guardrails for your repository in `.proofcode/rules.
 ## 🧪 Quality & Verification Standards
 
 ProofCode is rigorously tested against its own codebase:
-- **Test Suite**: **70 / 70 passing tests across 17 test suites** (`vitest`).
+- **Test Suite**: **77 / 77 passing tests across 18 test suites** (`vitest`).
 - **Dogfood Verification**: ProofCode self-verifies on every commit with **100% score**.
 - **TypeScript**: Strict typechecking (`tsc --noEmit`), 0 errors.
 - **ESLint**: Complete code compliance, 0 warnings.

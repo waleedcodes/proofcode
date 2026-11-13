@@ -6,6 +6,7 @@ import { ProjectRulesEngine } from '../rules/projectRulesEngine';
 import { RiskEngine } from '../rules/riskEngine';
 import { ContractAnalyzer } from '../analyzer/contractAnalyzer';
 import { TestRunner } from '../test-runner/testRunner';
+import { ProofCodeConfigLoader } from '../config/proofCodeConfig';
 import {
   BreakageRiskItem,
   CheckResult,
@@ -23,6 +24,7 @@ export interface VerifyOptions {
   baseRef?: string;
   runLiveTests?: boolean;
   rulesFilePath?: string;
+  allFiles?: boolean;
 }
 
 export class ProofCodeEngine {
@@ -67,8 +69,8 @@ export class ProofCodeEngine {
     const activeRoot = isSubfolder ? targetWorkspace : repoRoot;
 
     // If verifying a specific subfolder workspace (e.g. demo fixture or sub-package)
-    // and there are no active git diffs, synthesize diff files covering all source files
-    if (filesToVerify.length === 0 && isSubfolder) {
+    // and there are no active git diffs (or allFiles is requested), synthesize diff files covering all source files
+    if ((filesToVerify.length === 0 && isSubfolder) || options.allFiles) {
       const graphHelper = new ProjectGraph(activeRoot);
       const allFiles = graphHelper.findSourceFiles(activeRoot);
       filesToVerify = allFiles.map((fp: string) => {
@@ -91,7 +93,22 @@ export class ProofCodeEngine {
       });
     }
 
-    // 2. Project Graph & Dependency Mapping
+    // 2. Load project configuration (.proofcode/config.json, proofcode.config.json, or package.json)
+    const config = ProofCodeConfigLoader.loadConfig(activeRoot);
+
+    // Filter out files matching config.ignore patterns
+    if (config.ignore && config.ignore.length > 0) {
+      filesToVerify = filesToVerify.filter((f) => {
+        const norm = f.newPath.replace(/\\/g, '/');
+        const isIgnored = config.ignore.some((pattern) => {
+          const clean = pattern.replace(/^\*\*\//, '').replace(/\/\*\*$/, '');
+          return norm.includes(clean);
+        });
+        return !isIgnored;
+      });
+    }
+
+    // 3. Project Graph & Dependency Mapping
     const graph = new ProjectGraph(activeRoot);
     await graph.buildGraph();
 
@@ -121,6 +138,9 @@ export class ProofCodeEngine {
       this.gitService
     );
     allRisks.push(...contractBreaks);
+
+    // Apply rule configuration overrides (e.g. disable a rule with "off" or elevate severity)
+    const effectiveRisks = ProofCodeConfigLoader.applyRuleOverrides(allRisks, config);
 
     // 5. Project Rules Verification
     const rulesEngine = new ProjectRulesEngine(activeRoot, options.rulesFilePath);
@@ -163,18 +183,24 @@ export class ProofCodeEngine {
     // 7. Calculate Verification Score
     const score = this.calculateVerificationScore({
       filesChanged: filesToVerify,
-      risks: allRisks,
+      risks: effectiveRisks,
       rules: ruleResults,
       untestedCallersCount: impact.untestedCallersCount,
       checks: { tsCheck, lintCheck, unitTestsCheck, buildCheck }
     });
 
     // 8. Determine Verdict
-    const verdict = this.determineVerdict(score.total, allRisks, ruleResults, {
-      tsCheck,
-      lintCheck,
-      unitTestsCheck
-    });
+    const verdict = this.determineVerdict(
+      score.total,
+      effectiveRisks,
+      ruleResults,
+      {
+        tsCheck,
+        lintCheck,
+        unitTestsCheck
+      },
+      config.thresholds
+    );
 
     // Count test files touched
     const testsAdded = filesToVerify.filter(
@@ -182,14 +208,14 @@ export class ProofCodeEngine {
     ).length;
     const testsAffected = filesToVerify.filter((f) => graph.isTestFile(f.newPath)).length;
 
-    const highRiskCount = allRisks.filter((r) => r.severity === 'HIGH').length;
-    const mediumRiskCount = allRisks.filter((r) => r.severity === 'MEDIUM').length;
-    const lowRiskCount = allRisks.filter((r) => r.severity === 'LOW').length;
+    const highRiskCount = effectiveRisks.filter((r) => r.severity === 'HIGH').length;
+    const mediumRiskCount = effectiveRisks.filter((r) => r.severity === 'MEDIUM').length;
+    const lowRiskCount = effectiveRisks.filter((r) => r.severity === 'LOW').length;
 
     const totalLinesAdded = filesToVerify.reduce((acc, f) => acc + f.addedLines.length, 0);
     const totalLinesDeleted = filesToVerify.reduce((acc, f) => acc + f.deletedLines.length, 0);
 
-    const breakageRisks = this.computeBreakageRisks(impact, allRisks, ruleResults);
+    const breakageRisks = this.computeBreakageRisks(impact, effectiveRisks, ruleResults);
 
     return {
       timestamp: new Date().toISOString(),
@@ -210,7 +236,7 @@ export class ProofCodeEngine {
         lowRiskCount
       },
       impact,
-      risks: allRisks,
+      risks: effectiveRisks,
       breakageRisks,
       rules: ruleResults,
       checks: {
@@ -330,9 +356,12 @@ export class ProofCodeEngine {
       tsCheck: CheckResult;
       lintCheck: CheckResult;
       unitTestsCheck: CheckResult;
-    }
+    },
+    thresholds?: { minScore?: number; blockOnHighRisk?: boolean }
   ): VerificationVerdict {
-    const hasHighRisk = risks.some((r) => r.severity === 'HIGH');
+    const minScore = thresholds?.minScore ?? 85;
+    const blockOnHigh = thresholds?.blockOnHighRisk ?? true;
+    const hasHighRisk = blockOnHigh ? risks.some((r) => r.severity === 'HIGH') : false;
     const hasRuleViolation = rules.some((r) => r.status === 'VIOLATION');
     const hasTestFailure = checks.unitTestsCheck.status === 'FAIL';
     const hasTsFailure = checks.tsCheck.status === 'FAIL';
@@ -341,7 +370,7 @@ export class ProofCodeEngine {
       return 'BLOCKED';
     }
 
-    if (score < 85 || risks.some((r) => r.severity === 'MEDIUM')) {
+    if (score < minScore || risks.some((r) => r.severity === 'MEDIUM')) {
       return 'NEEDS_REVIEW';
     }
 

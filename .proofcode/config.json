@@ -1,0 +1,20 @@
+{
+  "thresholds": {
+    "minScore": 75,
+    "blockOnHighRisk": true
+  },
+  "ignore": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/.git/**",
+    "examples/**"
+  ],
+  "rules": {
+    "PC-REL-008": "error",
+    "PC-TYPE-001": "warn",
+    "PC-MUT-001": "error",
+    "PC-ENV-001": "error",
+    "PC-IMPORT-001": "error"
+  }
+}

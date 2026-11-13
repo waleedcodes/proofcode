@@ -5,6 +5,7 @@ import { ReportFormatter } from './engine/reportFormatter';
 import { ProjectRulesEngine } from './rules/projectRulesEngine';
 import { HookInstaller } from './git/hookInstaller';
 import { CiInstaller } from './ci/ciInstaller';
+import { ProofCodeConfigLoader } from './config/proofCodeConfig';
 import { VerificationReport } from './types';
 
 export function emitGitHubAnnotations(report: VerificationReport, baseDir: string): void {
@@ -76,6 +77,7 @@ Commands:
   verify [dir]         Verify working tree or git diff (default: current directory)
   pr-summary [dir]     Generate Markdown summary ready for GitHub PR comments
   init-ci [dir]        Generate GitHub Actions CI workflow (.github/workflows/proofcode.yml)
+  init-config [dir]    Generate custom configuration file (.proofcode/config.json)
   install-hook [dir]   Install deterministic pre-commit hook in .git/hooks/pre-commit
   uninstall-hook [dir] Uninstall ProofCode pre-commit hook
   init [dir]           Initialize default .proofcode/rules.md in target project
@@ -181,6 +183,23 @@ Examples:
         console.log('   PR comments and automated merge-blocking are now configured for GitHub Actions.\n');
       } else {
         console.log('   Use --force to overwrite the existing workflow.\n');
+      }
+      process.exit(0);
+    } else {
+      console.error(`\n❌ ${res.message}\n`);
+      process.exit(1);
+    }
+  }
+
+  if (command === 'init-config' || command === 'config') {
+    const isForce = args.includes('--force') || args.includes('-f');
+    const res = ProofCodeConfigLoader.initConfigFile(targetPath, { force: isForce });
+    if (res.success) {
+      console.log(`\n⚙️  ${res.message}`);
+      if (res.created) {
+        console.log('   Customize rule severity overrides and verification thresholds in .proofcode/config.json.\n');
+      } else {
+        console.log('   Use --force to overwrite existing configuration.\n');
       }
       process.exit(0);
     } else {

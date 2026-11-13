@@ -52,12 +52,29 @@ All notable changes to the "proofcode" extension will be documented in this file
 - **Toolbar PR Summary Copy**:
   - One-click `📋 Copy PR Summary` button in dashboard header.
 
+### Custom Project Configuration & Overrides
+- **Multi-Source Config Loader**:
+  - Supports `.proofcode/config.json`, `proofcode.config.json`, and `package.json#proofcode`.
+  - Configurable `thresholds` (`minScore`, `blockOnHighRisk`), glob `ignore` patterns, and per-rule severity overrides (`"off"`, `"warn"`, `"error"`, `"HIGH"`, `"MEDIUM"`, `"LOW"`).
+  - CLI scaffolding command `proofcode init-config` to quickly set up project configuration.
+
+### Interactive Demo Suite Upgrades
+- **Live AI Failure Showcase (`npm run demo`)**:
+  - Next.js sample repository in `examples/demo-app/` upgraded with live realistic AI failure scenarios:
+    - Breaking contract drift across API route and services (`PC-BREAK-001`).
+    - Unawaited promise in conditional permission check (`PC-REL-008`).
+    - Dangerous `as any` type suppression bypass (`PC-TYPE-001`).
+    - Direct state mutation via `.push()` (`PC-MUT-001`).
+    - Non-null asserted unvalidated environment variable `process.env.DATABASE_URL!` (`PC-ENV-001`).
+    - Hallucinated NPM package import `ai-fast-crypto-utils` (`PC-IMPORT-001`).
+    - Architectural rule violations in `.proofcode/rules.md`.
+
 ### Core Engine & Architecture
 - **Dependency Graph & Blast Radius Analysis**:
   - AST-based workspace symbol call graph tracking direct and transitive callers, untested callers, and API routes.
 - **Architectural Policy Enforcement**:
   - Markdown-driven policy rules in `.proofcode/rules.md`.
 - **Test Coverage**:
-  - Expanded test suite to **70 passing tests across 17 test files** (100% passing).
+  - Expanded test suite to **77 passing tests across 18 test files** (100% passing).
 - **Bundle Optimization**:
   - Production VS Code extension bundle maintained at **~68 KB**.
