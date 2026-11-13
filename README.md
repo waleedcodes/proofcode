@@ -11,7 +11,7 @@
     <a href="https://marketplace.visualstudio.com/items?itemName=waleedcodes.proofcode"><img src="https://img.shields.io/badge/VS_Code_Marketplace-v0.1.0-8B5CF6?style=flat-square&logo=visualstudiocode&logoColor=white" alt="VS Code Marketplace" /></a>
     <a href="https://open-vsx.org/extension/waleedcodes/proofcode"><img src="https://img.shields.io/badge/Open_VSX-v0.1.0-orange?style=flat-square&logo=eclipseche&logoColor=white" alt="Open VSX" /></a>
     <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5.5-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" /></a>
-    <a href="https://vitest.dev/"><img src="https://img.shields.io/badge/Tests-34%2F34_Passing-10B981?style=flat-square&logo=vitest&logoColor=white" alt="Tests Passing" /></a>
+    <a href="https://vitest.dev/"><img src="https://img.shields.io/badge/Tests-70%2F70_Passing-10B981?style=flat-square&logo=vitest&logoColor=white" alt="Tests Passing" /></a>
   </p>
 </div>
 
@@ -21,17 +21,14 @@
 
 AI coding agents (Cursor, GitHub Copilot, Claude Code, Devin, ChatGPT) can inspect codebases, generate hundreds of lines of code, and modify multiple files in seconds. **Writing code is no longer the bottleneck — trusting the result before shipping is.**
 
-AI assistants frequently introduce:
-- **Silent regressions in downstream callers** when modifying shared utilities.
-- **Untested code paths** that bypass test suites without warning.
-- **Security vulnerabilities** (SQL injection in dynamic queries, missing authorization in API handlers).
-- **Unhandled null values and uncaught async operations** that cause production crashes.
-- **Violations of architectural policies** (e.g., exposing sensitive fields like `passwordHash` in responses).
+Real-world development teams using AI code constantly face:
+- **Breaking Contract & Signature Drift**: The AI fixes a bug in an exported helper, changes parameter counts or return types, and silently breaks downstream callers.
+- **Compiles, But Silently Broken**: Code passes `tsc`, but the AI omitted an `await` inside a conditional (`if (checkAuth())` returning a Promise that is always truthy in JS), or directly mutated React state with `.push()`, causing silent production failures.
+- **Phantom Hallucinations**: The AI invents non-existent third-party package names, causing runtime `Cannot find module` crashes.
+- **AI Cheating & Test Weakening**: The AI secretly deletes or weakens test assertions to make failing suites pass instead of fixing the root cause.
+- **Scope Creep & Over-Editing**: The AI touches sensitive root configuration files (`.env`, `package.json`, `tsconfig.json`) outside its authorized scope.
 
-**ProofCode** is the missing verification layer. It runs deterministic static analysis and dependency graph inspection on every Git diff to answer three critical questions:
-1. **What did this change actually affect?** (Blast radius & downstream dependency impact)
-2. **What could it break?** (Untested callers, API route impact, risk evidence)
-3. **Is it safe to ship?** (Deterministic score gauge & verdict: `READY_TO_SHIP`, `NEEDS_REVIEW`, or `BLOCKED`)
+**ProofCode** is the deterministic verification layer. It runs AST analysis, call graph dependency tracing, and automated guardrails on every Git diff before code ever reaches production.
 
 ---
 
@@ -43,36 +40,61 @@ ProofCode constructs a full Abstract Syntax Tree (AST) call graph of your TypeSc
 - **Untested Callers Alert**: Flags whenever a modified function has downstream dependents with **zero test coverage**.
 - **API Route Mapping**: Detects when modified services touch Next.js App Router (`route.ts`) or Pages Router endpoints.
 
-### 2. 🛡️ Deterministic Static Risk Engine
-Unlike LLM-based reviewers that hallucinate or provide inconsistent advice, ProofCode runs fast, deterministic AST static analysis rules with precise source code evidence:
-- **`PC-SEC-001` (SQL Injection)**: Detects dynamic template literals and unescaped variable interpolations inside database query functions (`db.query`, `prisma.$queryRaw`, etc.).
-- **`PC-AUTH-001` (Missing Route Authorization)**: Detects API route handlers (`GET`, `POST`, `PUT`, `DELETE`) accessing database queries without session or authentication verification.
-- **`PC-DATA-001` (Unhandled Database Nulls)**: Detects database lookup results accessed without null/undefined guard clauses (`data.field` without `if (!data)` or optional chaining).
-- **`PC-REL-006` (Unhandled Asynchronous Operations)**: Detects unhandled `await` expressions or Promises lacking an enclosing `try/catch` block or `.catch()` handler.
+### 2. 🛡️ AI Reliability & Deterministic Risk Engine
+ProofCode runs 15+ deterministic, zero-hallucination static rules with verifiable evidence traces:
 
-### 3. 📐 Project Architectural Policy Enforcement
-Enforce your team's architectural standards directly using simple, human-readable Markdown files in `.proofcode/rules.md`:
-- Restrict sensitive fields (e.g. `passwordHash`, `secretKey`) from being included in API responses.
-- Ensure all mutation routes implement user ownership constraints (`userId === session.user.id`).
-- Check that core payment and billing services always have dedicated regression test coverage.
+| Rule ID | Category | Name & What It Detects | Severity |
+| :--- | :--- | :--- | :--- |
+| **`PC-BREAK-001`** | Quality | **Breaking Contract & Signature Drift**: Parameter count shifts, incompatible argument types, or nullable return widening (`null \| undefined`) affecting downstream callers. | **HIGH** |
+| **`PC-REL-008`** | Reliability | **Unawaited Promise in Conditionals**: Calling an async function without `await` inside `if (...)` or boolean checks (Promises are always truthy in JS, causing security bypasses). | **HIGH** |
+| **`PC-TYPE-001`** | Quality | **Unsafe Type Assertion Bypass**: AI using `as any`, `<any>`, or `@ts-ignore` / `@ts-nocheck` to silence compiler errors instead of fixing interfaces. | **MEDIUM / HIGH** |
+| **`PC-IMPORT-001`** | Reliability | **Phantom / Hallucinated Package Imports**: Modules imported that do not exist in `package.json`, preventing runtime resolution crashes. | **HIGH** |
+| **`PC-MUT-001`** | Reliability | **Direct State Mutation in React/Redux**: Direct array/object mutations (`.push()`, `.splice()`) called on state or inside setter callbacks (`setX(prev => { prev.push() })`), breaking React reactivity. | **HIGH** |
+| **`PC-ENV-001`** | Reliability | **Unchecked Environment Variable Access**: Forceful non-null assertions (`process.env.VAR!`) without fallback values or startup validation. | **HIGH** |
+| **`PC-DATA-002`** | Security | **Silent Security Field Drop**: AI refactoring payload structures and inadvertently dropping critical fields (`tenantId`, `userId`, `updatedAt`). | **HIGH** |
+| **`PC-STUB-001`** | Quality | **Incomplete AI Stubs & Placeholders**: Unimplemented stubs (`throw new Error("TODO")`, `Not implemented yet`) left behind in production code paths. | **HIGH** |
+| **`PC-REL-009`** | Reliability | **Silent Error Swallowing**: Catch blocks that silently swallow exceptions without logging or re-throwing. | **MEDIUM** |
+| **`PC-TEST-001`** | Quality | **AI Test Weakening & Deletion Guard**: Detecting when a Git diff deletes or weakens assertions in test suites. | **HIGH** |
+| **`PC-SCOPE-001`** | Security | **Scope Creep & Sensitive File Guard**: Unauthorized modifications to sensitive root configs (`.env`, `package.json`, `tsconfig.json`). | **HIGH** |
+| **`PC-SEC-001`** | Security | **SQL Injection**: Template literals or string concatenation in database query statements. | **HIGH** |
+| **`PC-AUTH-001`** | Security | **Missing Route Authorization**: API route handlers accessing database resources without session authentication. | **HIGH** |
+| **`PC-DATA-001`** | Reliability | **Unhandled Database Nulls**: Query results accessed directly without null guard checks or optional chaining. | **MEDIUM** |
+| **`PC-SEC-003`** | Security | **Path Traversal in File Operations**: Unsanitized user inputs passed to file system functions without `path.basename()`. | **HIGH** |
+| **`PC-SEC-007`** | Security | **Permissive Wildcard CORS**: `Access-Control-Allow-Origin: *` in authenticated APIs. | **HIGH** |
+| **`PC-REL-007`** | Reliability | **Regular Expression Denial of Service (ReDoS)**: Nested quantifiers in regular expressions. | **HIGH** |
 
-### 4. 📊 Glassmorphic Verification Dashboard
+### 3. 🧪 Targeted Live Test Execution (<1s)
+- **Autodetected Runners**: Automatically detects Vitest, Jest, or Mocha in your project.
+- **Smart Target Slicing**: Runs only the test files directly linked to the modified symbols in your Git diff rather than waiting for the entire test suite.
+- **Live Stack Trace Viewer**: Clean ANSI-stripped error logs and expandable stack traces rendered directly in the dashboard.
+
+### 4. 🪝 Automated Git Pre-Commit Hook
+Prevent broken AI code from ever being committed:
+```bash
+# Install deterministic pre-commit hook (runs in <1s)
+proofcode install-hook
+
+# Uninstall whenever needed
+proofcode uninstall-hook
+```
+If ProofCode detects critical risks or breaking contracts, the commit is blocked automatically with clear remediation instructions.
+
+### 5. 🤖 One-Command CI/CD Setup (`proofcode init-ci`)
+Drop automated GitHub Actions protection into any repository with one command:
+```bash
+proofcode init-ci
+```
+- Installs `.github/workflows/proofcode.yml`.
+- Automatically analyzes every Pull Request.
+- Posts and updates an idempotent PR comment with the complete Markdown verification report.
+- Blocks merge if verification score drops below 75% or has high-severity risks (`--strict`).
+
+### 6. 📊 Glassmorphic Verification Dashboard
 Inspect full verification metrics in an interactive, dark-mode glassmorphic dashboard:
-- **Animated SVG Radial Score Gauge**: Instant visual score from 0% to 100%.
-- **Interactive Visual Blast Tree Call Graph**: Visual tree diagram connecting root modifications to affected callers and API routes with live status badges.
-- **Live Search & Filter Toolbar**: Quickly filter downstream dependents and isolate untested callers with one click.
-- **Tabbed Navigation**: Switch between **Overview**, **Change Impact**, **Risk Findings**, **Project Rules**, and **Raw JSON Report**.
-
-### 5. 💡 Editor Integration (CodeLens & 1-Click Quick-Fixes)
-- **Inline CodeLens**: Shows downstream impact metrics directly above changed functions in the editor (e.g. `⚡ ProofCode: 4 callers (4 untested) · View Blast Radius`).
-- **1-Click Quick-Fixes (CodeActions)**: Press <kbd>Cmd</kbd>+<kbd>.</kbd> (or <kbd>Ctrl</kbd>+<kbd>.</kbd>) over detected risks to automatically apply:
-  - *"ProofCode: Wrap in try/catch block"*
-  - *"ProofCode: Add null guard check"*
-
-### 6. 🖥️ Dual Form Factor: Extension + Standalone CLI
-Run ProofCode wherever you develop:
-- **VS Code Extension**: Real-time feedback, activity bar sidebar, CodeLens, diagnostics, and webview dashboard.
-- **Standalone CLI (`proofcode`)**: Lightweight executable for terminal workflows, pre-commit Git hooks, and CI/CD pipelines.
+- **Radial Score Gauge**: Visual score from 0% to 100% with instant status (`READY TO SHIP`, `NEEDS REVIEW`, or `BLOCKED`).
+- **Interactive Blast Tree Call Graph**: Visual tree diagram connecting root modifications to affected callers and API routes with live status badges.
+- **1-Click Quick Fix Buttons**: Fix detected risks (`as any`, `@ts-ignore`, unhandled promises, missing null guards) directly from the dashboard.
+- **"📋 Copy PR Summary"**: One click copies a formatted GitHub Markdown report ready for Slack, PRs, or issue trackers.
 
 ---
 
@@ -80,10 +102,10 @@ Run ProofCode wherever you develop:
 
 ### Installation
 
-#### Install from VSIX
-1. Download `proofcode-0.1.0.vsix` from the [Releases](https://github.com/waleedcodes/proofcode/releases) page.
-2. In VS Code, open the Extensions view (<kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>X</kbd>).
-3. Click the **`···`** menu in the top-right corner and select **"Install from VSIX..."**.
+#### Install VS Code Extension (from VSIX)
+1. Download `proofcode-0.1.0.vsix` from [Releases](https://github.com/waleedcodes/proofcode/releases).
+2. In VS Code, open Extensions (<kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>X</kbd>).
+3. Click **`···`** in the top-right corner and select **"Install from VSIX..."**.
 4. Select `proofcode-0.1.0.vsix`.
 
 #### Install Standalone CLI via npm
@@ -93,47 +115,43 @@ npm install -g proofcode
 
 ---
 
-## 🛠️ Usage
-
-### Using the VS Code Extension
-
-1. **Activity Bar**: Click the emerald **ProofCode** shield icon in the left activity bar to open the **Verification Overview** sidebar tree view.
-2. **Run Verification**: Open the Command Palette (<kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>) and select:
-   - `ProofCode: Verify Code Change` (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> <kbd>V</kbd>)
-   - `ProofCode: Open Verification Dashboard`
-   - `ProofCode: Initialize Rules File (.proofcode/rules.md)`
-   - `ProofCode: Export Verification Report (Markdown / JSON)`
-
-### Using the Standalone CLI
+## 🛠️ CLI Reference
 
 ```bash
 # Verify working tree changes against Git HEAD
 proofcode verify
 
-# Verify a specific subfolder, monorepo package, or demo app
-proofcode verify ./examples/demo-app
-
-# Verify only staged git changes (ideal for pre-commit hooks)
+# Verify only staged git changes (git diff --cached)
 proofcode verify --staged
 
-# CI/CD Mode: Emit inline GitHub Actions annotations (::error, ::warning) and Job Summary
-proofcode verify --ci
+# Generate PR markdown comment summary and write to file
+proofcode pr-summary -o pr-comment.md
 
-# Strict Mode: Fail CI build (exit code 1) if score < 75% or needs review
+# Install automated git pre-commit hook in .git/hooks/pre-commit
+proofcode install-hook
+
+# Install GitHub Actions workflow (.github/workflows/proofcode.yml)
+proofcode init-ci
+
+# CI Mode: Emit GitHub Actions annotations and append to Step Summary
 proofcode verify --ci --strict
 
-# Run full live test checks and compiler validation alongside static analysis
+# Run targeted live unit tests alongside verification
 proofcode verify --live
 
-# Output report as clean GitHub Markdown (great for PR comments)
-proofcode verify --markdown
-
-# Output report as structured JSON for custom tooling
+# Output report as JSON or formatted GitHub Markdown
 proofcode verify --json
-
-# Initialize a default rules template
-proofcode init ./my-project
+proofcode verify --markdown
 ```
+
+### Options & Flags
+- `--staged`: Verify only staged git changes (`git diff --cached`).
+- `--live`: Run targeted project unit tests (Vitest, Jest, Mocha).
+- `--ci`: Output GitHub Actions annotations (`::error`, `::warning`) and write to Step Summary.
+- `--strict`: Exit code 1 if score < 75% or verdict is not `READY_TO_SHIP`.
+- `--markdown`, `-m`: Output report as formatted GitHub Flavored Markdown.
+- `--json`: Output report as structured JSON.
+- `-o, --output <file>`: Write output directly to the specified file path.
 
 ---
 
@@ -144,29 +162,25 @@ proofcode init ./my-project
              PROOFCODE CHANGE VERIFICATION          
 ====================================================
 Verdict:       BLOCKED
-Score:         0%
-Files Changed: 9
-Functions:     11 affected
-API Routes:    2 affected
-Risks:         🔴 3 High | 🟠 0 Med | 🟢 9 Low
+Score:         42%
+Files Changed: 3
+Functions:     5 affected
+API Routes:    1 affected
+Risks:         🔴 2 High | 🟠 1 Med | 🟢 0 Low
 ----------------------------------------------------
 WHAT COULD THIS CHANGE BREAK?
-- [HIGH] Authentication & Session Flow: Symbol 'getUser' was modified in auth.ts.
-  Impact: 4 downstream caller(s) depend on this behavior. 4 caller(s) lack automated test coverage.
-  Dependents: renderAdminPanel (AdminPanel.tsx), renderDashboard (Dashboard.tsx), getOrderForUser (orderService.ts), processPayment (paymentService.ts)
-- [HIGH] Data Security: Potential SQL Injection (Template Literal)
-  Impact: Database query uses unescaped string interpolation with dynamic variables, exposing the endpoint to SQL injection.
-  Dependents: route.ts (api/auth/login)
+- [HIGH] Breaking Contract: Symbol 'getOrder' parameter count changed from 1 to 2.
+  Impact: 2 downstream caller(s) broken.
+  Dependents: Dashboard.tsx:42, orderService.ts:88
+- [HIGH] Reliability: Unawaited Async Call in Conditional Statement
+  Impact: Call to 'checkAuth()' is evaluated inside 'if (...)' without 'await'.
+  Dependents: route.ts (api/orders)
 ----------------------------------------------------
 CRITICAL FINDINGS:
-[HIGH] Potential SQL Injection (Template Literal) at src/app/api/auth/login/route.ts:8
-  -> Database query uses unescaped string interpolation with dynamic variables.
-[HIGH] Missing Authorization Check in API Route (POST) at src/app/api/auth/login/route.ts:3
-  -> API route handler 'POST' accesses database resources without verifying user authentication.
-----------------------------------------------------
-RULE VIOLATIONS:
-- Rule 2 (Data Privacy): Detected sensitive field "passwordHash" in response payload.
-- Rule 3 (Resource Ownership): Query in "orders/[id]/route.ts" queries orders without verifying userId.
+[HIGH] Breaking Contract Drift at src/services/orderService.ts:18
+  -> Function 'getOrder' now requires 2 parameters, but caller 'Dashboard.tsx:42' passes 1.
+[HIGH] Unawaited Async Call in Conditional Statement at src/app/api/orders/route.ts:12
+  -> Call to 'checkAuth()' returns a Promise object without 'await'.
 ====================================================
 ```
 
@@ -187,83 +201,24 @@ Define custom architectural guardrails for your repository in `.proofcode/rules.
 ## Rule 2: Data Privacy & Secret Exposure
 - **Pattern**: `src/app/api/**`
 - **Severity**: HIGH
-- **Requirement**: Never return password hashes (`passwordHash`), secret keys, or sensitive internal credentials in API response JSON payloads.
+- **Requirement**: Never return password hashes (`passwordHash`), secret keys, or sensitive credentials in API response JSON.
 
 ## Rule 3: Resource Ownership
 - **Pattern**: `src/app/api/orders/**`
 - **Severity**: HIGH
-- **Requirement**: Queries for specific records must verify user ownership (`userId` constraint) to prevent Insecure Direct Object References (IDOR).
+- **Requirement**: Queries for specific records must enforce user ownership (`userId` constraint) to prevent IDOR attacks.
 ```
 
 ---
 
-## 🤖 CI/CD Integration: GitHub Actions
+## 🧪 Quality & Verification Standards
 
-Automate change verification on every Pull Request with a GitHub Actions workflow:
-
-```yaml
-name: ProofCode Verification
-
-on:
-  pull_request:
-    branches: [main, master, working]
-
-jobs:
-  verify:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Install ProofCode
-        run: npm install -g proofcode
-
-      - name: Run ProofCode Verification
-        run: proofcode verify --markdown > pr-verification.md
-
-      - name: Attach PR Comment
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const body = fs.readFileSync('pr-verification.md', 'utf8');
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: body
-            });
-```
-
----
-
-## 🏛️ Architecture & Extension Settings
-
-ProofCode contributes the following configuration options in VS Code:
-
-| Setting | Default | Description |
-| :--- | :--- | :--- |
-| `proofcode.enableOnSave` | `true` | Automatically run verification whenever a file is saved. |
-| `proofcode.strictScoreThreshold` | `75` | Minimum score percentage required for `READY_TO_SHIP` verdict. |
-| `proofcode.blockOnHighRisk` | `true` | Automatically block changes (`BLOCKED` verdict) if $\ge 1$ High risk is found. |
-| `proofcode.showCodeLens` | `true` | Show inline CodeLens annotations above modified symbols. |
-| `proofcode.runLiveTests` | `false` | Run automated test suites (vitest, jest, etc.) during verification. |
-
----
-
-## 🧪 Quality & Test Standards
-
-ProofCode is thoroughly tested and verified:
-- **Test Suite**: 34 / 34 passing tests across 13 suites (`vitest`).
+ProofCode is rigorously tested against its own codebase:
+- **Test Suite**: **70 / 70 passing tests across 17 test suites** (`vitest`).
+- **Dogfood Verification**: ProofCode self-verifies on every commit with **100% score**.
 - **TypeScript**: Strict typechecking (`tsc --noEmit`), 0 errors.
-- **ESLint**: `@typescript-eslint` recommended rules, 0 warnings.
-- **Build Performance**: Fast esbuild bundling (`dist/extension.js` and `dist/cli.js` built in `<800ms`).
+- **ESLint**: Complete code compliance, 0 warnings.
+- **Bundle Performance**: Production VS Code extension bundle built with esbuild (`dist/extension.js` at **~68 KB**).
 
 ---
 
