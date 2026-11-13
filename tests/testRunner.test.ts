@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TestRunner } from '../src/test-runner/testRunner';
 
 describe('TestRunner', () => {
@@ -53,9 +53,20 @@ describe('TestRunner', () => {
         scripts: { test: 'vitest run' }
       })
     );
-    // Since mock files don't actually run, test command will trigger vitest
+
+    const executeCommandSpy = vi.spyOn(runner as never, 'executeCommand').mockResolvedValue({
+      name: 'Targeted Tests',
+      status: 'PASS',
+      message: 'Completed successfully without errors.'
+    });
+
     const result = await runner.runTargetedTests(tempDir, [path.join(tempDir, 'tests/sample.test.ts')]);
-    expect(['PASS', 'FAIL']).toContain(result.status);
+    expect(executeCommandSpy).toHaveBeenCalledWith(
+      'npx vitest run "tests/sample.test.ts"',
+      tempDir,
+      'Targeted Tests'
+    );
+    expect(result.status).toBe('PASS');
     expect(result.name).toBe('Targeted Tests');
   });
 });
