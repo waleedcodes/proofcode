@@ -50,7 +50,21 @@ describe('ProofCodeWebviewPanel', () => {
         totalCallersCount: 2,
         untestedCallersCount: 1
       },
-      risks: [],
+      risks: [
+        {
+          id: 'risk-type-1',
+          ruleId: 'PC-TYPE-001',
+          category: 'quality',
+          title: "Dangerous Type Assertion Bypass ('as any')",
+          severity: 'MEDIUM',
+          description: "Diff introduced an unsafe 'as any' assertion",
+          file: '/workspace/src/auth.ts',
+          line: 15,
+          evidenceTrace: [],
+          snippet: 'const x = val as any;',
+          recommendation: "Replace 'any' with a precise interface"
+        }
+      ],
       breakageRisks: [
         {
           id: 'BRK-1',
@@ -107,5 +121,9 @@ describe('ProofCodeWebviewPanel', () => {
     expect(html).toContain('⚠️ Untested Caller');
     expect(html).toContain('/api/auth/session');
     expect(html).toContain('💥 What Could Break');
+    expect(html).toContain('id="btn-copy-pr"');
+    expect(html).toContain('Copy PR Summary');
+    expect(html).toContain('quick-fix-btn');
+    expect(html).toContain('⚡ Quick Fix');
   });
 });

@@ -1,6 +1,8 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { VerificationReport } from '../types';
+import { ReportFormatter } from '../engine/reportFormatter';
+import { ProofCodeCodeActionProvider } from './codeActionProvider';
 
 export class ProofCodeWebviewPanel {
   public static currentPanel: ProofCodeWebviewPanel | undefined;
@@ -43,6 +45,26 @@ export class ProofCodeWebviewPanel {
             break;
           case 'exportMarkdown':
             await vscode.commands.executeCommand('proofcode.exportReport');
+            break;
+          case 'copyPrSummary':
+            if (this._report) {
+              try {
+                const md = ReportFormatter.toMarkdown(this._report);
+                await vscode.env.clipboard.writeText(md);
+                vscode.window.showInformationMessage('📋 ProofCode: PR Summary copied to clipboard!');
+              } catch (err: unknown) {
+                vscode.window.showErrorMessage(`Failed to copy PR summary: ${(err as Error).message}`);
+              }
+            }
+            break;
+          case 'applyQuickFix':
+            if (message.file && message.line && message.ruleId) {
+              try {
+                await this.applyQuickFixAtLine(message.file, message.line, message.ruleId);
+              } catch (err: unknown) {
+                vscode.window.showErrorMessage(`Failed to apply quick fix: ${(err as Error).message}`);
+              }
+            }
             break;
         }
       },
@@ -115,6 +137,49 @@ export class ProofCodeWebviewPanel {
       );
     } catch (err: unknown) {
       vscode.window.showErrorMessage(`Failed to open evidence file: ${(err as Error).message}`);
+    }
+  }
+
+  private async applyQuickFixAtLine(filePath: string, line: number, ruleId: string): Promise<void> {
+    try {
+      const fullPath = path.isAbsolute(filePath)
+        ? filePath
+        : path.resolve(this._report?.repoRoot || '', filePath);
+      const uri = vscode.Uri.file(fullPath);
+      const doc = await vscode.workspace.openTextDocument(uri);
+      const lineIdx = Math.max(0, line - 1);
+      const docLine = doc.lineAt(lineIdx);
+      const range = docLine.range;
+
+      const diag = new vscode.Diagnostic(
+        range,
+        `[${ruleId}] ProofCode Risk`,
+        vscode.DiagnosticSeverity.Warning
+      );
+      diag.source = 'ProofCode';
+      diag.code = ruleId;
+
+      const provider = new ProofCodeCodeActionProvider();
+      const actions = provider.provideCodeActions(
+        doc,
+        range,
+        { diagnostics: [diag], triggerKind: vscode.CodeActionTriggerKind.Invoke, only: undefined },
+        new vscode.CancellationTokenSource().token
+      );
+
+      if (actions.length > 0 && actions[0].edit) {
+        await vscode.workspace.applyEdit(actions[0].edit);
+        await doc.save();
+        vscode.window.showInformationMessage(`⚡ ProofCode: Applied quick fix for [${ruleId}]`);
+        if (this._onVerifyRequested) {
+          await this._onVerifyRequested();
+        }
+      } else {
+        await this.openFileAtLine(filePath, line);
+        vscode.window.showInformationMessage(`Opened ${path.basename(filePath)}:${line} to review fix.`);
+      }
+    } catch (err: unknown) {
+      vscode.window.showErrorMessage(`Failed to apply quick fix: ${(err as Error).message}`);
     }
   }
 
@@ -907,6 +972,9 @@ export class ProofCodeWebviewPanel {
       <button id="btn-run-tests" class="btn btn-primary" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); border-color: #059669;">
         🧪 Run Live Tests
       </button>
+      <button id="btn-copy-pr" class="btn btn-secondary">
+        📋 Copy PR Summary
+      </button>
       <button id="btn-export" class="btn btn-secondary">
         📄 Export Report
       </button>
@@ -985,18 +1053,38 @@ export class ProofCodeWebviewPanel {
            </div>`
         : risks
             .map(
-              (r) => `
+              (r) => {
+                const hasQuickFix = [
+                  'PC-TYPE-001',
+                  'PC-IMPORT-001',
+                  'PC-REL-006',
+                  'PC-REL-008',
+                  'PC-REL-009',
+                  'PC-DATA-001',
+                  'PC-AUTH-001',
+                  'PC-SEC-003'
+                ].includes(r.ruleId);
+                return `
         <div class="risk-card ${r.severity.toLowerCase()}">
           <div class="risk-header">
             <div class="risk-title-wrap">
               <span class="severity-tag ${r.severity.toLowerCase()}">${r.severity}</span>
-              <span class="risk-title">${r.title}</span>
+              <span class="risk-title">${escapeHtml(r.title)}</span>
             </div>
-            <button class="btn btn-secondary open-evidence-btn" data-file="${r.file}" data-line="${r.line}">
-              🔍 Open Evidence (${path.basename(r.file)}:${r.line})
-            </button>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              ${
+                hasQuickFix
+                  ? `<button class="btn btn-primary quick-fix-btn" data-file="${escapeHtml(r.file)}" data-line="${r.line}" data-rule="${escapeHtml(r.ruleId)}" style="padding: 4px 10px; font-size: 11px; background: #3B82F6; border-color: #2563EB;">
+                      ⚡ Quick Fix
+                    </button>`
+                  : ''
+              }
+              <button class="btn btn-secondary open-evidence-btn" data-file="${escapeHtml(r.file)}" data-line="${r.line}">
+                🔍 Open (${path.basename(r.file)}:${r.line})
+              </button>
+            </div>
           </div>
-          <p style="color: #CBD5E1; margin-bottom: 8px;">${r.description}</p>
+          <p style="color: #CBD5E1; margin-bottom: 8px;">${escapeHtml(r.description)}</p>
           
           ${
             r.evidenceTrace.length > 0
@@ -1013,10 +1101,11 @@ export class ProofCodeWebviewPanel {
           }
 
           <div class="recommendation-box">
-            <strong>Action:</strong> ${r.recommendation}
+            <strong>Action:</strong> ${escapeHtml(r.recommendation)}
           </div>
         </div>
-      `
+      `;
+              }
             )
             .join('')
     }
@@ -1338,12 +1427,33 @@ export class ProofCodeWebviewPanel {
       vscode.postMessage({ type: 'verifyWithTests' });
     });
 
+    document.getElementById('btn-copy-pr')?.addEventListener('click', () => {
+      const btn = document.getElementById('btn-copy-pr');
+      if (btn) {
+        const orig = btn.innerText;
+        btn.innerText = '✅ Copied!';
+        setTimeout(() => { btn.innerText = orig; }, 2000);
+      }
+      vscode.postMessage({ type: 'copyPrSummary' });
+    });
+
     document.getElementById('btn-export')?.addEventListener('click', () => {
       vscode.postMessage({ type: 'exportMarkdown' });
     });
 
     document.getElementById('btn-init-rules')?.addEventListener('click', () => {
       vscode.postMessage({ type: 'initRules' });
+    });
+
+    document.querySelectorAll('.quick-fix-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const file = btn.getAttribute('data-file');
+        const line = parseInt(btn.getAttribute('data-line') || '1', 10);
+        const ruleId = btn.getAttribute('data-rule') || '';
+        btn.innerText = '⏳ Applying...';
+        btn.style.opacity = '0.7';
+        vscode.postMessage({ type: 'applyQuickFix', file, line, ruleId });
+      });
     });
 
     document.querySelectorAll('.open-evidence-btn').forEach(btn => {

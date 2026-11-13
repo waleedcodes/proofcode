@@ -833,6 +833,98 @@ export class RiskEngine {
         }
       }
 
+      // Rule: Unchecked / Non-null Asserted Environment Variable (PC-ENV-001)
+      if (!isTest && ts.isNonNullExpression(node)) {
+        const exprText = node.expression.getText(sourceFile);
+        if (exprText.startsWith('process.env.') || exprText.startsWith('process.env[')) {
+          const { line, column } = getLineAndColumn(node.getStart(sourceFile));
+          if (isLineChanged(line)) {
+            findings.push({
+              id: `PC-ENV-ASSERT-${filePath}-${line}`,
+              ruleId: 'PC-ENV-001',
+              category: 'reliability',
+              title: 'Unchecked Non-Null Asserted Environment Variable',
+              severity: 'HIGH',
+              description: `Expression '${node.getText(sourceFile)}' forcefully asserts that an environment variable exists without runtime validation. AI assistants frequently use non-null assertions to silence compiler errors, risking runtime crashes in production environments where the variable is unset.`,
+              file: filePath,
+              line,
+              column,
+              snippet: getSnippet(line),
+              evidenceTrace: [
+                {
+                  file: filePath,
+                  line,
+                  description: `Environment variable '${exprText}' asserted with non-null operator (!)`
+                }
+              ],
+              recommendation: `Validate '${exprText}' at startup or provide a safe fallback (e.g. ${exprText} || 'fallback').`
+            });
+          }
+        }
+      }
+
+      // Rule: Direct State Mutation in React/State Management (PC-MUT-001)
+      if (!isTest && ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
+        const methodName = node.expression.name.text;
+        const MUTATING_METHODS = new Set(['push', 'splice', 'pop', 'shift', 'unshift', 'reverse', 'sort']);
+
+        if (MUTATING_METHODS.has(methodName)) {
+          const targetObjText = node.expression.expression.getText(sourceFile);
+          const isStateTarget =
+            /^(prev|prevState|state|currentState|draftState)$/i.test(targetObjText) ||
+            targetObjText.startsWith('prev.') ||
+            targetObjText.startsWith('state.');
+
+          // Also check if inside a setter callback: setX((prev) => { ... })
+          let insideSetter = false;
+          let currentParent: ts.Node | undefined = node.parent;
+          while (currentParent) {
+            if (ts.isCallExpression(currentParent)) {
+              const calleeText = currentParent.expression.getText(sourceFile);
+              if (/^set[A-Z]/.test(calleeText) || calleeText === 'setState' || calleeText === 'dispatch') {
+                insideSetter = true;
+                break;
+              }
+            }
+            if (ts.isFunctionDeclaration(currentParent) || ts.isClassDeclaration(currentParent)) {
+              break;
+            }
+            currentParent = currentParent.parent;
+          }
+
+          if (isStateTarget || (insideSetter && !targetObjText.startsWith('this.'))) {
+            const { line, column } = getLineAndColumn(node.getStart(sourceFile));
+            if (isLineChanged(line)) {
+              findings.push({
+                id: `PC-STATE-MUT-${filePath}-${line}`,
+                ruleId: 'PC-MUT-001',
+                category: 'reliability',
+                title: `Direct State Mutation Detected ('.${methodName}()')`,
+                severity: 'HIGH',
+                description: `Directly mutating state with '.${methodName}()' violates immutable state patterns in React and modern state management. This preserves object identity, which silently bypasses equality checks (Object.is) and causes components to fail to re-render.`,
+                file: filePath,
+                line,
+                column,
+                snippet: getSnippet(line),
+                evidenceTrace: [
+                  {
+                    file: filePath,
+                    line,
+                    description: `In-place mutation '${targetObjText}.${methodName}(...)' called on state object`
+                  },
+                  {
+                    file: filePath,
+                    line,
+                    description: 'React state updates require new object/array references to trigger UI re-renders'
+                  }
+                ],
+                recommendation: `Use immutable updates instead: replace with spread syntax (e.g. [...${targetObjText}, item]) or non-mutating methods (.filter(), .map(), .concat()).`
+              });
+            }
+          }
+        }
+      }
+
       ts.forEachChild(node, visit);
     };
 

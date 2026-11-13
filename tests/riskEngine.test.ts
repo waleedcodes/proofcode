@@ -369,4 +369,35 @@ export function test() { return hallucinatedFunc(); }
     expect(importRisk?.severity).toBe('HIGH');
     expect(importRisk?.title).toContain('non-existent-ai-package-12345');
   });
+
+  it('should detect non-null asserted environment variable access (PC-ENV-001)', () => {
+    const code = `
+export function getDbConnection() {
+  const url = process.env.DATABASE_URL!;
+  return url;
+}
+`;
+    const findings = RiskEngine.analyzeFile('/src/config.ts', code);
+    const envRisk = findings.find((f) => f.ruleId === 'PC-ENV-001');
+    expect(envRisk).toBeDefined();
+    expect(envRisk?.severity).toBe('HIGH');
+    expect(envRisk?.title).toContain('Non-Null Asserted Environment Variable');
+  });
+
+  it('should detect direct state mutations in React/state management (PC-MUT-001)', () => {
+    const code = `
+export function updateTodos(newItem: string) {
+  setTodos((prev) => {
+    prev.push(newItem);
+    return prev;
+  });
+}
+`;
+    const findings = RiskEngine.analyzeFile('/src/components/TodoList.tsx', code);
+    const mutRisk = findings.find((f) => f.ruleId === 'PC-MUT-001');
+    expect(mutRisk).toBeDefined();
+    expect(mutRisk?.severity).toBe('HIGH');
+    expect(mutRisk?.title).toContain('.push()');
+    expect(mutRisk?.description).toContain('immutable state patterns');
+  });
 });

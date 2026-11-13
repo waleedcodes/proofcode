@@ -4,6 +4,7 @@ import { ProofCodeEngine } from './engine/proofCodeEngine';
 import { ReportFormatter } from './engine/reportFormatter';
 import { ProjectRulesEngine } from './rules/projectRulesEngine';
 import { HookInstaller } from './git/hookInstaller';
+import { CiInstaller } from './ci/ciInstaller';
 import { VerificationReport } from './types';
 
 export function emitGitHubAnnotations(report: VerificationReport, baseDir: string): void {
@@ -74,6 +75,7 @@ Usage:
 Commands:
   verify [dir]         Verify working tree or git diff (default: current directory)
   pr-summary [dir]     Generate Markdown summary ready for GitHub PR comments
+  init-ci [dir]        Generate GitHub Actions CI workflow (.github/workflows/proofcode.yml)
   install-hook [dir]   Install deterministic pre-commit hook in .git/hooks/pre-commit
   uninstall-hook [dir] Uninstall ProofCode pre-commit hook
   init [dir]           Initialize default .proofcode/rules.md in target project
@@ -121,6 +123,7 @@ Examples:
     if (
       first === 'init' ||
       first === 'rules' ||
+      first === 'init-ci' ||
       first === 'install-hook' ||
       first === 'hook' ||
       first === 'uninstall-hook' ||
@@ -162,6 +165,23 @@ Examples:
     const res = HookInstaller.uninstallPreCommitHook(targetPath);
     if (res.success) {
       console.log(`\n🛡️  ${res.message}\n`);
+      process.exit(0);
+    } else {
+      console.error(`\n❌ ${res.message}\n`);
+      process.exit(1);
+    }
+  }
+
+  if (command === 'init-ci') {
+    const isForce = args.includes('--force') || args.includes('-f');
+    const res = CiInstaller.installGitHubWorkflow(targetPath, { force: isForce });
+    if (res.success) {
+      console.log(`\n🚀 ${res.message}`);
+      if (res.created) {
+        console.log('   PR comments and automated merge-blocking are now configured for GitHub Actions.\n');
+      } else {
+        console.log('   Use --force to overwrite the existing workflow.\n');
+      }
       process.exit(0);
     } else {
       console.error(`\n❌ ${res.message}\n`);

@@ -13,4 +13,6 @@ esbuild.config.js
 .git/**
 .github/**
 **/*.map
+*.vsix
+*.tgz
 node_modules/**
