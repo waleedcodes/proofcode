@@ -2,7 +2,10 @@
 
 All notable changes to the "proofcode" extension will be documented in this file.
 
-## [0.1.0] - 2026-11-13
+## [1.0.0] - 2026-11-13
+
+### 🚀 Official 1.0.0 Production Release
+The complete AI code change verification platform for VS Code, CI/CD, and CLI. Proves every AI edit, prevents contract drift, flags hallucinations, blocks breaking PRs, and safeguards repository integrity.
 
 ### AI Reliability & Anti-Hallucination Engine
 - **Breaking Contract & Signature Drift (`PC-BREAK-001`)**:
