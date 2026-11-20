@@ -4,7 +4,15 @@ All notable changes to the "proofcode" extension will be documented in this file
 
 ## [1.1.0] - 2026-11-20
 
-### 🛡️ Next.js App Router & Server Actions Security Guard
+### 🖥️ Interactive Terminal TUI Dashboard (`proofcode ui`)
+- **Live Terminal Dashboard (`proofcode ui` & `proofcode dashboard`)**:
+  - Interactive multi-tab ANSI/Unicode terminal dashboard with zero heavy external dependencies.
+  - Live Health Score Bar gauge and change impact breakdown.
+  - Interactive navigation ([1-4 / Tab]) across Overview, Risk Findings, Blast Radius Call Graph, and Auto-Fix.
+  - Interactive item selection ([↑/↓]) with real-time evidence trace and remediation preview.
+  - Hotkey **`r`** for instant live workspace re-verification.
+  - Hotkey **`f`** for 1-click live auto-fixing directly from the terminal.
+  - Graceful fallback for non-TTY / piped terminal environments.
 - **Unauthenticated Next.js Server Action (`PC-ACTION-001`)**:
   - Automatically identifies `'use server'` files and inline function directives.
   - Flags Server Actions performing sensitive database queries and state mutations without user authentication or session verification (`auth()`, `getServerSession()`, `currentUser()`).

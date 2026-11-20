@@ -6,6 +6,7 @@ import { ProjectRulesEngine } from './rules/projectRulesEngine';
 import { HookInstaller } from './git/hookInstaller';
 import { CiInstaller } from './ci/ciInstaller';
 import { ProofCodeConfigLoader } from './config/proofCodeConfig';
+import { TerminalDashboard } from './ui/terminalDashboard';
 import { VerificationReport } from './types';
 
 export function emitGitHubAnnotations(report: VerificationReport, baseDir: string): void {
@@ -75,6 +76,8 @@ Usage:
 
 Commands:
   verify [dir]         Verify working tree or git diff (default: current directory)
+  ui [dir]             Launch interactive terminal dashboard with live re-verification & auto-fix
+  dashboard [dir]      Alias for 'ui'
   fix [dir]            Automatically heal safe AI code risks across git diff or workspace
   pr-summary [dir]     Generate Markdown summary ready for GitHub PR comments
   init-ci [dir]        Generate GitHub Actions CI workflow (.github/workflows/proofcode.yml)
@@ -132,6 +135,8 @@ Examples:
       first === 'init-config' ||
       first === 'config' ||
       first === 'fix' ||
+      first === 'ui' ||
+      first === 'dashboard' ||
       first === 'install-hook' ||
       first === 'hook' ||
       first === 'uninstall-hook' ||
@@ -212,6 +217,19 @@ Examples:
       console.error(`\n❌ ${res.message}\n`);
       process.exit(1);
     }
+  }
+
+  if (command === 'ui' || command === 'dashboard') {
+    const isLive = args.includes('--live');
+    const isStaged = args.includes('--staged');
+    const engine = new ProofCodeEngine(targetPath);
+    const dashboard = new TerminalDashboard(engine, {
+      staged: isStaged,
+      runLiveTests: isLive,
+      interactive: true
+    });
+    await dashboard.start();
+    return;
   }
 
   if (command === 'fix') {

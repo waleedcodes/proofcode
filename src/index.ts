@@ -13,4 +13,5 @@ export {
   AppliedFix,
   FileFixResult
 } from './fixer/autoFixEngine';
+export { TerminalDashboard, TerminalDashboardOptions, DashboardTab } from './ui/terminalDashboard';
 export * from './types';

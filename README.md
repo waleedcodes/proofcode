@@ -11,7 +11,7 @@
     <a href="https://marketplace.visualstudio.com/items?itemName=waleedcodes.proofcode"><img src="https://img.shields.io/badge/VS_Code_Marketplace-v1.0.0-8B5CF6?style=flat-square&logo=visualstudiocode&logoColor=white" alt="VS Code Marketplace" /></a>
     <a href="https://github.com/waleedcodes/proofcode/actions"><img src="https://img.shields.io/badge/CI-Passing-00E599?style=flat-square&logo=githubactions&logoColor=white" alt="CI Status" /></a>
     <a href="https://github.com/waleedcodes/proofcode/blob/master/LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue?style=flat-square" alt="License" /></a>
-    <a href="https://vitest.dev/"><img src="https://img.shields.io/badge/Tests-99%2F99_Passing-10B981?style=flat-square&logo=vitest&logoColor=white" alt="Tests Passing" /></a>
+    <a href="https://vitest.dev/"><img src="https://img.shields.io/badge/Tests-104%2F104_Passing-10B981?style=flat-square&logo=vitest&logoColor=white" alt="Tests Passing" /></a>
   </p>
 </div>
 
@@ -129,6 +129,9 @@ npm install -g proofcode
 ## 🛠️ CLI Reference
 
 ```bash
+# Launch interactive terminal TUI dashboard with live re-verification & auto-fix
+proofcode ui
+
 # Verify working tree changes against Git HEAD
 proofcode verify
 
