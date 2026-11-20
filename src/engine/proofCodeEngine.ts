@@ -7,6 +7,7 @@ import { RiskEngine } from '../rules/riskEngine';
 import { ContractAnalyzer } from '../analyzer/contractAnalyzer';
 import { TestRunner } from '../test-runner/testRunner';
 import { ProofCodeConfigLoader } from '../config/proofCodeConfig';
+import { AutoFixEngine, AutoFixEngineOptions, AutoFixSummary } from '../fixer/autoFixEngine';
 import {
   BreakageRiskItem,
   CheckResult,
@@ -453,5 +454,21 @@ export class ProofCodeEngine {
     }
 
     return breakage;
+  }
+
+  /**
+   * Scans the workspace or git diff for risks and automatically applies
+   * safe, deterministic code fixes.
+   */
+  public async fix(
+    options: VerifyOptions & AutoFixEngineOptions = {}
+  ): Promise<AutoFixSummary> {
+    const report = await this.verify(options);
+    const repoRoot = await this.gitService.getRepoRoot();
+    return AutoFixEngine.applyFixes(repoRoot, report.risks, {
+      dryRun: options.dryRun,
+      ruleId: options.ruleId,
+      workspaceRoot: repoRoot
+    });
   }
 }

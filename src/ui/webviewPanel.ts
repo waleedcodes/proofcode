@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import { VerificationReport } from '../types';
 import { ReportFormatter } from '../engine/reportFormatter';
 import { ProofCodeCodeActionProvider } from './codeActionProvider';
+import { AutoFixEngine } from '../fixer/autoFixEngine';
 
 export class ProofCodeWebviewPanel {
   public static currentPanel: ProofCodeWebviewPanel | undefined;
@@ -65,6 +66,9 @@ export class ProofCodeWebviewPanel {
                 vscode.window.showErrorMessage(`Failed to apply quick fix: ${(err as Error).message}`);
               }
             }
+            break;
+          case 'autoFixAll':
+            await this.handleAutoFixAll();
             break;
         }
       },
@@ -180,6 +184,36 @@ export class ProofCodeWebviewPanel {
       }
     } catch (err: unknown) {
       vscode.window.showErrorMessage(`Failed to apply quick fix: ${(err as Error).message}`);
+    }
+  }
+
+  private async handleAutoFixAll(): Promise<void> {
+    if (!this._report || this._report.risks.length === 0) {
+      vscode.window.showInformationMessage('ProofCode: No risks detected to auto-fix.');
+      return;
+    }
+
+    try {
+      const summary = AutoFixEngine.applyFixes(
+        this._report.repoRoot,
+        this._report.risks,
+        { dryRun: false }
+      );
+
+      if (summary.totalFixesApplied > 0) {
+        vscode.window.showInformationMessage(
+          `🛠️ ProofCode: Auto-healed ${summary.totalFixesApplied} risk(s) across ${summary.filesModified} file(s)!`
+        );
+        if (this._onVerifyRequested) {
+          await this._onVerifyRequested();
+        }
+      } else {
+        vscode.window.showInformationMessage(
+          'ProofCode: No automated fixers are registered for the remaining risks.'
+        );
+      }
+    } catch (err: unknown) {
+      vscode.window.showErrorMessage(`Auto-fix failed: ${(err as Error).message}`);
     }
   }
 
@@ -975,6 +1009,9 @@ export class ProofCodeWebviewPanel {
       <button id="btn-copy-pr" class="btn btn-secondary">
         📋 Copy PR Summary
       </button>
+      <button id="btn-autofix" class="btn btn-primary" style="background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%); border-color: #6d28d9;">
+        🛠️ Auto-Fix All
+      </button>
       <button id="btn-export" class="btn btn-secondary">
         📄 Export Report
       </button>
@@ -1435,6 +1472,15 @@ export class ProofCodeWebviewPanel {
         setTimeout(() => { btn.innerText = orig; }, 2000);
       }
       vscode.postMessage({ type: 'copyPrSummary' });
+    });
+
+    document.getElementById('btn-autofix')?.addEventListener('click', () => {
+      const btn = document.getElementById('btn-autofix');
+      if (btn) {
+        btn.innerText = '⏳ Auto-Fixing...';
+        btn.style.opacity = '0.7';
+      }
+      vscode.postMessage({ type: 'autoFixAll' });
     });
 
     document.getElementById('btn-export')?.addEventListener('click', () => {

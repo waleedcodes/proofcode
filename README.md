@@ -121,6 +121,16 @@ npm install -g proofcode
 # Verify working tree changes against Git HEAD
 proofcode verify
 
+# Automatically heal safe AI code risks across git diff or workspace
+proofcode fix
+
+# Preview automated fixes without writing to disk
+proofcode fix --dry-run
+
+# Auto-fix only staged git changes or a specific rule
+proofcode fix --staged
+proofcode fix --rule PC-ENV-001
+
 # Verify only staged git changes (git diff --cached)
 proofcode verify --staged
 
@@ -247,11 +257,11 @@ Define custom architectural guardrails for your repository in `.proofcode/rules.
 ## 🧪 Quality & Verification Standards
 
 ProofCode is rigorously tested against its own codebase:
-- **Test Suite**: **77 / 77 passing tests across 18 test suites** (`vitest`).
+- **Test Suite**: **86 / 86 passing tests across 19 test suites** (`vitest`).
 - **Dogfood Verification**: ProofCode self-verifies on every commit with **100% score**.
 - **TypeScript**: Strict typechecking (`tsc --noEmit`), 0 errors.
 - **ESLint**: Complete code compliance, 0 warnings.
-- **Bundle Performance**: Production VS Code extension bundle built with esbuild (`dist/extension.js` at **~68 KB**).
+- **Bundle Performance**: Production VS Code extension bundle built with esbuild (`dist/extension.js` at **~74 KB**).
 
 ---
 

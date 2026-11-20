@@ -217,6 +217,44 @@ export class ProofCodeCodeActionProvider implements vscode.CodeActionProvider {
         removeImportAction.edit = importEdit;
         actions.push(removeImportAction);
       }
+
+      // 10. Quick Fix for PC-ENV-001: Unchecked Environment Variable Access
+      if (diag.code === 'PC-ENV-001') {
+        const envAction = new vscode.CodeAction(
+          "🛡️ ProofCode: Replace non-null assertion with safe fallback (|| '')",
+          vscode.CodeActionKind.QuickFix
+        );
+        envAction.isPreferred = true;
+        envAction.diagnostics = [diag];
+
+        const envEdit = new vscode.WorkspaceEdit();
+        const replacedLine = lineText.replace(
+          /(process\.env(?:\.[a-zA-Z0-9_]+|\[['"][^'"]+['"]\]))!/g,
+          "$1 || ''"
+        );
+        envEdit.replace(document.uri, line.range, replacedLine);
+        envAction.edit = envEdit;
+        actions.push(envAction);
+      }
+
+      // 11. Quick Fix for PC-MUT-001: Direct State Mutation
+      if (diag.code === 'PC-MUT-001') {
+        const mutAction = new vscode.CodeAction(
+          '🛡️ ProofCode: Replace mutating .push() with immutable array spread',
+          vscode.CodeActionKind.QuickFix
+        );
+        mutAction.isPreferred = true;
+        mutAction.diagnostics = [diag];
+
+        const mutEdit = new vscode.WorkspaceEdit();
+        const replacedLine = lineText.replace(
+          /([a-zA-Z0-9_$]+)\.push\(([^)]+)\)/g,
+          '$1 = [...$1, $2]'
+        );
+        mutEdit.replace(document.uri, line.range, replacedLine);
+        mutAction.edit = mutEdit;
+        actions.push(mutAction);
+      }
     }
 
     return actions;

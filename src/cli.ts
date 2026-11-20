@@ -75,6 +75,7 @@ Usage:
 
 Commands:
   verify [dir]         Verify working tree or git diff (default: current directory)
+  fix [dir]            Automatically heal safe AI code risks across git diff or workspace
   pr-summary [dir]     Generate Markdown summary ready for GitHub PR comments
   init-ci [dir]        Generate GitHub Actions CI workflow (.github/workflows/proofcode.yml)
   init-config [dir]    Generate custom configuration file (.proofcode/config.json)
@@ -84,7 +85,9 @@ Commands:
   rules [dir]          List and check configured project rules
 
 Options:
-  --staged       Verify only staged git changes (git diff --cached)
+  --staged       Verify or fix only staged git changes (git diff --cached)
+  --dry-run      Preview automated fixes without modifying files on disk
+  --rule <id>    Auto-fix only a specific rule (e.g. --rule PC-ENV-001)
   --live         Run full live test and build checks (npm test, tsc, etc.)
   --ci           Output GitHub Actions annotations (::error, ::warning) and Step Summary
   --strict       Fail with exit code 1 if score < 75% or needs review
@@ -110,7 +113,7 @@ Examples:
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg.startsWith('-')) {
-      if (arg === '--output' || arg === '-o') {
+      if (arg === '--output' || arg === '-o' || arg === '--rule') {
         i++; // Skip the option parameter
       }
       continue;
@@ -126,6 +129,9 @@ Examples:
       first === 'init' ||
       first === 'rules' ||
       first === 'init-ci' ||
+      first === 'init-config' ||
+      first === 'config' ||
+      first === 'fix' ||
       first === 'install-hook' ||
       first === 'hook' ||
       first === 'uninstall-hook' ||
@@ -206,6 +212,48 @@ Examples:
       console.error(`\n❌ ${res.message}\n`);
       process.exit(1);
     }
+  }
+
+  if (command === 'fix') {
+    const isDryRun = args.includes('--dry-run');
+    const isStaged = args.includes('--staged');
+    const ruleIdx = args.indexOf('--rule');
+    const targetRule = ruleIdx !== -1 && args[ruleIdx + 1] ? args[ruleIdx + 1] : undefined;
+
+    console.log('\n🛠️  ProofCode Auto-Fix Engine');
+    console.log(`Target: ${targetPath} ${isStaged ? '(staged diff only)' : ''} ${isDryRun ? '[DRY-RUN]' : ''}`);
+
+    const engine = new ProofCodeEngine(targetPath);
+    const summary = await engine.fix({
+      staged: isStaged,
+      dryRun: isDryRun,
+      ruleId: targetRule
+    });
+
+    if (summary.totalFixesApplied === 0) {
+      console.log('\n✨ No fixable AI risks detected! Your code changes are clean.\n');
+      process.exit(0);
+    }
+
+    console.log(`\n${isDryRun ? '🔍 Proposed Fixes (Dry Run):' : '✅ Applied Fixes:'}`);
+    for (const res of summary.results) {
+      if (res.appliedFixes.length > 0) {
+        console.log(`\n📄 ${res.relativeFile}:`);
+        for (const fix of res.appliedFixes) {
+          console.log(`   Line ${fix.line}: [${fix.ruleId}] ${fix.description}`);
+          console.log(`   - Before: ${fix.before.trim()}`);
+          console.log(`   + After:  ${fix.after.trim()}`);
+        }
+      }
+    }
+
+    console.log(`\n🎉 ${isDryRun ? 'Previewed' : 'Healed'} ${summary.totalFixesApplied} issue(s) across ${summary.filesModified} file(s).`);
+    if (isDryRun) {
+      console.log('   Run `proofcode fix` to apply these changes to disk.\n');
+    } else {
+      console.log('   Run `proofcode verify` to re-validate the updated codebase.\n');
+    }
+    process.exit(0);
   }
 
   if (command === 'init') {

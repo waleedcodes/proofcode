@@ -92,6 +92,12 @@
         "title": "Export Verification Report",
         "category": "ProofCode",
         "icon": "$(desktop-download)"
+      },
+      {
+        "command": "proofcode.fixAll",
+        "title": "Auto-Fix All Detected AI Issues",
+        "category": "ProofCode",
+        "icon": "$(tools)"
       }
     ],
     "menus": {
@@ -119,6 +125,9 @@
         },
         {
           "command": "proofcode.exportReport"
+        },
+        {
+          "command": "proofcode.fixAll"
         }
       ]
     },

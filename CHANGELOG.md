@@ -72,12 +72,27 @@ The complete AI code change verification platform for VS Code, CI/CD, and CLI. P
     - Hallucinated NPM package import `ai-fast-crypto-utils` (`PC-IMPORT-001`).
     - Architectural rule violations in `.proofcode/rules.md`.
 
+### One-Command Auto-Fix Engine (`proofcode fix`)
+- **Automated Code Healing**:
+  - Automatically heals safe AI coding mistakes across your Git diff without breaking index line shifts:
+    - `PC-REL-008`: Inserts missing `await` before asynchronous calls inside conditional statements (`if`, `while`, ternary).
+    - `PC-ENV-001`: Replaces unsafe non-null asserted environment variables (`process.env.VAR!`) with safe fallback defaults (`|| ''`).
+    - `PC-TYPE-001`: Converts unsafe `as any` into `as unknown` and removes compiler suppression directives (`@ts-ignore`).
+    - `PC-REL-009`: Adds proper error telemetry and logging inside empty or swallowed catch blocks.
+    - `PC-REL-006`: Wraps unhandled asynchronous operations in safe try/catch blocks.
+    - `PC-IMPORT-001`: Removes uninstalled / phantom dependency imports hallucinated by AI tools.
+    - `PC-MUT-001`: Replaces direct array mutations (`.push()`) with immutable array spread assignments.
+- **CLI & Webview Integration**:
+  - Added CLI command `proofcode fix [dir]` with `--dry-run`, `--staged`, and `--rule <id>` options.
+  - Added `🛠️ Auto-Fix All` button directly to the Webview Dashboard header toolbar.
+  - Added VS Code command `proofcode.fixAll` to Command Palette.
+
 ### Core Engine & Architecture
 - **Dependency Graph & Blast Radius Analysis**:
   - AST-based workspace symbol call graph tracking direct and transitive callers, untested callers, and API routes.
 - **Architectural Policy Enforcement**:
   - Markdown-driven policy rules in `.proofcode/rules.md`.
 - **Test Coverage**:
-  - Expanded test suite to **77 passing tests across 18 test files** (100% passing).
+  - Expanded test suite to **86 passing tests across 19 test files** (100% passing).
 - **Bundle Optimization**:
   - Production VS Code extension bundle maintained at **~68 KB**.

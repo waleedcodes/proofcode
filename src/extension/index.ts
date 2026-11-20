@@ -9,6 +9,7 @@ import { ProofCodeCodeActionProvider } from '../ui/codeActionProvider';
 import { ProofCodeCodeLensProvider } from '../ui/codeLensProvider';
 import { ProofCodeTreeDataProvider } from '../ui/treeDataProvider';
 import { ProofCodeWebviewPanel } from '../ui/webviewPanel';
+import { AutoFixEngine } from '../fixer/autoFixEngine';
 
 function getProofCodeEngine(): typeof ProofCodeEngineType {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -304,6 +305,37 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.showInformationMessage(`ProofCode: Verification report exported to ${exportPath}`);
   });
 
+  const fixAllCmd = vscode.commands.registerCommand('proofcode.fixAll', async () => {
+    const root = getWorkspaceRoot();
+    if (!root) {
+      vscode.window.showWarningMessage('ProofCode requires an open workspace folder.');
+      return;
+    }
+
+    if (!latestReport || latestReport.risks.length === 0) {
+      await runVerification(true);
+    }
+
+    if (!latestReport || latestReport.risks.length === 0) {
+      vscode.window.showInformationMessage('ProofCode: No risks detected to auto-fix.');
+      return;
+    }
+
+    try {
+      const summary = AutoFixEngine.applyFixes(root, latestReport.risks, { dryRun: false });
+      if (summary.totalFixesApplied > 0) {
+        vscode.window.showInformationMessage(
+          `🛠️ ProofCode: Auto-healed ${summary.totalFixesApplied} risk(s) across ${summary.filesModified} file(s)!`
+        );
+        await runVerification(false);
+      } else {
+        vscode.window.showInformationMessage('ProofCode: No automated fixers are registered for the remaining risks.');
+      }
+    } catch (err: unknown) {
+      vscode.window.showErrorMessage(`Auto-fix failed: ${(err as Error).message}`);
+    }
+  });
+
   // Auto-verify on save if configured
   const onSaveDisposable = vscode.workspace.onDidSaveTextDocument(async (doc) => {
     if (doc.fileName.includes('.git') || doc.fileName.includes('node_modules')) return;
@@ -317,6 +349,7 @@ export function activate(context: vscode.ExtensionContext): void {
     verifyCmd,
     verifyWithLiveTestsCmd,
     openDashboardCmd,
+    fixAllCmd,
     initRulesCmd,
     openEvidenceCmd,
     exportReportCmd,
