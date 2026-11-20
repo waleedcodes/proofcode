@@ -6,12 +6,12 @@
   <p><strong>Code Change Verification, Blast Radius Analysis & Deterministic Security Guardrails for Modern Development.</strong></p>
 
   <p>
+    <a href="https://www.npmjs.com/package/proofcode"><img src="https://img.shields.io/npm/v/proofcode.svg?style=flat-square&logo=npm&logoColor=white&color=CB3837" alt="npm version" /></a>
+    <a href="https://open-vsx.org/extension/waleedcodes/proofcode"><img src="https://img.shields.io/badge/Open_VSX-v1.0.0-orange?style=flat-square&logo=eclipseche&logoColor=white" alt="Open VSX" /></a>
+    <a href="https://marketplace.visualstudio.com/items?itemName=waleedcodes.proofcode"><img src="https://img.shields.io/badge/VS_Code_Marketplace-v1.0.0-8B5CF6?style=flat-square&logo=visualstudiocode&logoColor=white" alt="VS Code Marketplace" /></a>
     <a href="https://github.com/waleedcodes/proofcode/actions"><img src="https://img.shields.io/badge/CI-Passing-00E599?style=flat-square&logo=githubactions&logoColor=white" alt="CI Status" /></a>
-    <a href="https://github.com/waleedcodes/proofcode/blob/working/LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue?style=flat-square" alt="License" /></a>
-    <a href="https://marketplace.visualstudio.com/items?itemName=waleedcodes.proofcode"><img src="https://img.shields.io/badge/VS_Code_Marketplace-v0.1.0-8B5CF6?style=flat-square&logo=visualstudiocode&logoColor=white" alt="VS Code Marketplace" /></a>
-    <a href="https://open-vsx.org/extension/waleedcodes/proofcode"><img src="https://img.shields.io/badge/Open_VSX-v0.1.0-orange?style=flat-square&logo=eclipseche&logoColor=white" alt="Open VSX" /></a>
-    <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5.5-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" /></a>
-    <a href="https://vitest.dev/"><img src="https://img.shields.io/badge/Tests-70%2F70_Passing-10B981?style=flat-square&logo=vitest&logoColor=white" alt="Tests Passing" /></a>
+    <a href="https://github.com/waleedcodes/proofcode/blob/master/LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue?style=flat-square" alt="License" /></a>
+    <a href="https://vitest.dev/"><img src="https://img.shields.io/badge/Tests-86%2F86_Passing-10B981?style=flat-square&logo=vitest&logoColor=white" alt="Tests Passing" /></a>
   </p>
 </div>
 
@@ -102,16 +102,23 @@ Inspect full verification metrics in an interactive, dark-mode glassmorphic dash
 
 ### Installation
 
-#### Install VS Code Extension (from VSIX)
-1. Download `proofcode-0.1.0.vsix` from [Releases](https://github.com/waleedcodes/proofcode/releases).
-2. In VS Code, open Extensions (<kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>X</kbd>).
-3. Click **`···`** in the top-right corner and select **"Install from VSIX..."**.
-4. Select `proofcode-0.1.0.vsix`.
-
-#### Install Standalone CLI via npm
+#### Install Standalone CLI (npm or npx)
+Run instantly without installing:
+```bash
+npx proofcode verify
+```
+Or install globally:
 ```bash
 npm install -g proofcode
 ```
+
+#### Install VS Code Extension
+- **Open VSX Registry (Cursor, VSCodium, Gitpod)**: Install directly from [Open VSX](https://open-vsx.org/extension/waleedcodes/proofcode).
+- **VS Code Marketplace**: Install directly from [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=waleedcodes.proofcode).
+- **Manual VSIX**: Download `proofcode-1.0.0.vsix` from [Releases](https://github.com/waleedcodes/proofcode/releases) and run:
+  ```bash
+  code --install-extension proofcode-1.0.0.vsix
+  ```
 
 ---
 
