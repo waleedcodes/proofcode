@@ -9,6 +9,9 @@ jobs:
   publish:
     name: Publish Extension
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -32,7 +35,11 @@ jobs:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
 
       - name: Publish to Open VSX Registry
-        if: env.OVSX_PAT != ''
-        run: npx --yes ovsx publish --no-dependencies -p ${{ secrets.OVSX_PAT }}
+        run: |
+          if [ -n "${{ secrets.OVSX_PAT }}" ]; then
+            npx --yes ovsx publish --no-dependencies -p ${{ secrets.OVSX_PAT }}
+          else
+            npx --yes ovsx publish --no-dependencies
+          fi
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
