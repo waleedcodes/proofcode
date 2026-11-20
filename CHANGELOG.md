@@ -2,6 +2,23 @@
 
 All notable changes to the "proofcode" extension will be documented in this file.
 
+## [1.1.0] - 2026-11-20
+
+### 🛡️ Next.js App Router & Server Actions Security Guard
+- **Unauthenticated Next.js Server Action (`PC-ACTION-001`)**:
+  - Automatically identifies `'use server'` files and inline function directives.
+  - Flags Server Actions performing sensitive database queries and state mutations without user authentication or session verification (`auth()`, `getServerSession()`, `currentUser()`).
+  - Added 1-click QuickFix in VS Code to insert session validation.
+- **Server Secret / Module Leak in Client Components (`PC-LEAK-001`)**:
+  - Flags private environment variable access in `'use client'` files (`process.env.VAR` not prefixed with `NEXT_PUBLIC_`).
+  - Blocks server-only and database package imports (`@prisma/client`, `server-only`, `bcrypt`, `jsonwebtoken`, `better-sqlite3`, `pg`, `mysql2`) in client bundles.
+  - Added deterministic automated fix in `proofcode fix` and VS Code QuickFix.
+- **Missing Cache Revalidation in Server Action (`PC-ACTION-002`)**:
+  - Detects mutating Server Actions that omit `revalidatePath()` or `revalidateTag()`, preventing stale UI router cache desyncs.
+  - Added automated healing in `proofcode fix` and VS Code QuickFix.
+- **Unvalidated Input / Mass Assignment in Server Action (`PC-ACTION-003`)**:
+  - Detects raw client parameters passed directly into database updates without schema validation (e.g. Zod `safeParse`).
+
 ## [1.0.0] - 2026-11-13
 
 ### 🚀 Official 1.0.0 Production Release

@@ -11,7 +11,7 @@
     <a href="https://marketplace.visualstudio.com/items?itemName=waleedcodes.proofcode"><img src="https://img.shields.io/badge/VS_Code_Marketplace-v1.0.0-8B5CF6?style=flat-square&logo=visualstudiocode&logoColor=white" alt="VS Code Marketplace" /></a>
     <a href="https://github.com/waleedcodes/proofcode/actions"><img src="https://img.shields.io/badge/CI-Passing-00E599?style=flat-square&logo=githubactions&logoColor=white" alt="CI Status" /></a>
     <a href="https://github.com/waleedcodes/proofcode/blob/master/LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue?style=flat-square" alt="License" /></a>
-    <a href="https://vitest.dev/"><img src="https://img.shields.io/badge/Tests-86%2F86_Passing-10B981?style=flat-square&logo=vitest&logoColor=white" alt="Tests Passing" /></a>
+    <a href="https://vitest.dev/"><img src="https://img.shields.io/badge/Tests-99%2F99_Passing-10B981?style=flat-square&logo=vitest&logoColor=white" alt="Tests Passing" /></a>
   </p>
 </div>
 
@@ -45,6 +45,10 @@ ProofCode runs 15+ deterministic, zero-hallucination static rules with verifiabl
 
 | Rule ID | Category | Name & What It Detects | Severity |
 | :--- | :--- | :--- | :--- |
+| **`PC-ACTION-001`** | Security | **Unauthenticated Next.js Server Action**: Server Actions performing database mutations without verifying caller session/auth. | **HIGH** |
+| **`PC-LEAK-001`** | Security | **Server Secret / Module Leak in Client Component**: Accessing private `process.env` secrets or importing server modules in `'use client'` files. | **HIGH** |
+| **`PC-ACTION-002`** | Reliability | **Missing Cache Revalidation in Server Action**: Mutating database state without invoking `revalidatePath()` or `revalidateTag()`. | **MEDIUM** |
+| **`PC-ACTION-003`** | Security | **Mass Assignment in Server Action**: Passing unvalidated client parameters directly to database updates without schema parsing. | **HIGH** |
 | **`PC-BREAK-001`** | Quality | **Breaking Contract & Signature Drift**: Parameter count shifts, incompatible argument types, or nullable return widening (`null \| undefined`) affecting downstream callers. | **HIGH** |
 | **`PC-REL-008`** | Reliability | **Unawaited Promise in Conditionals**: Calling an async function without `await` inside `if (...)` or boolean checks (Promises are always truthy in JS, causing security bypasses). | **HIGH** |
 | **`PC-TYPE-001`** | Quality | **Unsafe Type Assertion Bypass**: AI using `as any`, `<any>`, or `@ts-ignore` / `@ts-nocheck` to silence compiler errors instead of fixing interfaces. | **MEDIUM / HIGH** |

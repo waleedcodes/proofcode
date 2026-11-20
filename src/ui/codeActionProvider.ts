@@ -255,6 +255,57 @@ export class ProofCodeCodeActionProvider implements vscode.CodeActionProvider {
         mutAction.edit = mutEdit;
         actions.push(mutAction);
       }
+
+      // 12. Quick Fix for PC-ACTION-001: Unauthenticated Server Action
+      if (diag.code === 'PC-ACTION-001') {
+        const authAction = new vscode.CodeAction(
+          '🛡️ ProofCode: Add session authentication check (await auth())',
+          vscode.CodeActionKind.QuickFix
+        );
+        authAction.isPreferred = true;
+        authAction.diagnostics = [diag];
+
+        const authEdit = new vscode.WorkspaceEdit();
+        const authSnippet = `${indent}  const session = await auth();\n${indent}  if (!session?.user) throw new Error('Unauthorized');\n`;
+        authEdit.insert(document.uri, new vscode.Position(lineIdx + 1, 0), authSnippet);
+        authAction.edit = authEdit;
+        actions.push(authAction);
+      }
+
+      // 13. Quick Fix for PC-LEAK-001: Server Secret Leak in Client Component
+      if (diag.code === 'PC-LEAK-001') {
+        const leakAction = new vscode.CodeAction(
+          "🛡️ ProofCode: Prefix with NEXT_PUBLIC_ for client visibility",
+          vscode.CodeActionKind.QuickFix
+        );
+        leakAction.isPreferred = true;
+        leakAction.diagnostics = [diag];
+
+        const leakEdit = new vscode.WorkspaceEdit();
+        const replacedLine = lineText.replace(
+          /process\.env\.(?!NEXT_PUBLIC_)([a-zA-Z0-9_]+)/g,
+          'process.env.NEXT_PUBLIC_$1'
+        );
+        leakEdit.replace(document.uri, line.range, replacedLine);
+        leakAction.edit = leakEdit;
+        actions.push(leakAction);
+      }
+
+      // 14. Quick Fix for PC-ACTION-002: Missing Cache Revalidation
+      if (diag.code === 'PC-ACTION-002') {
+        const revalAction = new vscode.CodeAction(
+          "🛡️ ProofCode: Add revalidatePath('/') cache refresh",
+          vscode.CodeActionKind.QuickFix
+        );
+        revalAction.isPreferred = true;
+        revalAction.diagnostics = [diag];
+
+        const revalEdit = new vscode.WorkspaceEdit();
+        const revalSnippet = `${indent}  revalidatePath('/');\n`;
+        revalEdit.insert(document.uri, new vscode.Position(lineIdx + 1, 0), revalSnippet);
+        revalAction.edit = revalEdit;
+        actions.push(revalAction);
+      }
     }
 
     return actions;

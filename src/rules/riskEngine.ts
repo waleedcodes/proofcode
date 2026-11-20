@@ -1008,6 +1008,18 @@ export class RiskEngine {
       findings.push(...authFindings);
     }
 
+    // Rule: Next.js App Router & Server Actions Security (PC-ACTION-001, PC-LEAK-001, PC-ACTION-002, PC-ACTION-003)
+    if (!isTest) {
+      const nextFindings = this.checkNextJsSecurity(
+        filePath,
+        sourceFile,
+        sourceText,
+        isLineChanged,
+        getSnippet
+      );
+      findings.push(...nextFindings);
+    }
+
     // Rule: Test Weakening / Deleted Assertions (PC-TEST-001)
     if (isTest && fileDiff && fileDiff.hunks) {
       let deletedAssertions = 0;
@@ -1429,6 +1441,262 @@ export class RiskEngine {
         });
       }
     }
+  }
+
+  private static checkNextJsSecurity(
+    filePath: string,
+    sourceFile: ts.SourceFile,
+    sourceText: string,
+    isLineChanged: (line: number) => boolean,
+    getSnippet: (line: number) => string
+  ): RiskFinding[] {
+    const findings: RiskFinding[] = [];
+
+    // Detect file-level directives
+    const hasFileUseServer = /^\s*['"]use server['"]/m.test(sourceText);
+    const hasFileUseClient = /^\s*['"]use client['"]/m.test(sourceText);
+
+    // 1. PC-LEAK-001: Client Component ('use client') Secret & Server Module Leak
+    if (hasFileUseClient) {
+      const serverOnlyModules = new Set([
+        'server-only',
+        '@prisma/client',
+        'prisma',
+        'jsonwebtoken',
+        'bcrypt',
+        'bcryptjs',
+        'argon2',
+        'better-sqlite3',
+        'sqlite3',
+        'pg',
+        'mysql2',
+        'mongoose'
+      ]);
+
+      const visitClientNode = (node: ts.Node) => {
+        // A) Server-only module imports in 'use client' file
+        if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
+          const modName = node.moduleSpecifier.text;
+          if (serverOnlyModules.has(modName)) {
+            const lc = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+            const line = lc.line + 1;
+            if (isLineChanged(line)) {
+              findings.push({
+                id: `PC-LEAK-MOD-${filePath}-${line}`,
+                ruleId: 'PC-LEAK-001',
+                category: 'security',
+                title: `Server-Only Module Imported in Client Component (${modName})`,
+                severity: 'HIGH',
+                description: `Client Component ('use client') imports server-only module '${modName}'. This will cause bundler failures or expose backend database logic in browser bundles.`,
+                file: filePath,
+                line,
+                snippet: getSnippet(line),
+                evidenceTrace: [
+                  {
+                    file: filePath,
+                    line,
+                    description: `Module '${modName}' is restricted to server runtimes but imported in client component`
+                  }
+                ],
+                recommendation: `Move '${modName}' imports and backend queries to a Server Component or Server Action.`
+              });
+            }
+          }
+        }
+
+        // B) Server environment variable access in 'use client' file
+        if (ts.isPropertyAccessExpression(node)) {
+          const exprText = node.expression.getText(sourceFile);
+          if (exprText === 'process.env') {
+            const varName = node.name.text;
+            if (!varName.startsWith('NEXT_PUBLIC_') && varName !== 'NODE_ENV') {
+              const lc = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+              const line = lc.line + 1;
+              if (isLineChanged(line)) {
+                findings.push({
+                  id: `PC-LEAK-ENV-${filePath}-${line}`,
+                  ruleId: 'PC-LEAK-001',
+                  category: 'security',
+                  title: `Server Secret Leaked in Client Component (${varName})`,
+                  severity: 'HIGH',
+                  description: `Client Component ('use client') accesses private environment variable 'process.env.${varName}'. In Next.js, only variables prefixed with 'NEXT_PUBLIC_' are available in browser bundles; server secrets will evaluate to undefined or leak sensitive values.`,
+                  file: filePath,
+                  line,
+                  snippet: getSnippet(line),
+                  evidenceTrace: [
+                    {
+                      file: filePath,
+                      line,
+                      description: `Private environment variable 'process.env.${varName}' accessed in client-rendered component`
+                    }
+                  ],
+                  recommendation: `Prefix the variable with 'NEXT_PUBLIC_' if safe for browser exposure, or move secret access to a Server Component or Server Action.`
+                });
+              }
+            }
+          }
+        }
+
+        ts.forEachChild(node, visitClientNode);
+      };
+      ts.forEachChild(sourceFile, visitClientNode);
+    }
+
+    // 2. Server Action Checks: PC-ACTION-001, PC-ACTION-002, PC-ACTION-003
+    const DB_OR_SENSITIVE_MODULE = /\b(db|prisma|supabase|stripe|fs)\b/i;
+    const MUTATION_METHODS =
+      /\b(create|update|delete|upsert|insert|query|execute|raw|writeFile|unlink|charges|paymentIntents)\b/i;
+    const AUTH_PATTERNS =
+      /\b(auth|session|getServerSession|currentUser|verifySession|getAuth|requireAuth|authenticate|useSession|userSession|jwt\.verify|cookies\(\)\.get)\b/i;
+    const REVALIDATE_PATTERNS = /\b(revalidatePath|revalidateTag)\b/;
+    const SCHEMA_VALIDATION_PATTERNS = /\b(safeParse|parse|validate|z\.object|zod)\b/i;
+
+    const inspectServerAction = (
+      node: ts.FunctionDeclaration | ts.ArrowFunction | ts.FunctionExpression,
+      actionName: string,
+      isExported: boolean
+    ) => {
+      // Must be async
+      const isAsync = node.modifiers?.some((m) => m.kind === ts.SyntaxKind.AsyncKeyword) ?? false;
+      if (!isAsync) return;
+
+      // Check if function has 'use server' directive inside its body
+      let hasInlineUseServer = false;
+      if (node.body && ts.isBlock(node.body)) {
+        for (const stmt of node.body.statements) {
+          if (ts.isExpressionStatement(stmt) && ts.isStringLiteral(stmt.expression)) {
+            if (stmt.expression.text === 'use server') {
+              hasInlineUseServer = true;
+              break;
+            }
+          }
+        }
+      }
+
+      const isServerAction = (hasFileUseServer && isExported) || hasInlineUseServer;
+      if (!isServerAction) return;
+
+      const bodyText = node.body ? node.body.getText(sourceFile) : '';
+      const bodyClean = bodyText.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '');
+
+      const hasMutation = DB_OR_SENSITIVE_MODULE.test(bodyClean) && MUTATION_METHODS.test(bodyClean);
+      const hasAuth = AUTH_PATTERNS.test(bodyClean);
+      const hasRevalidate = REVALIDATE_PATTERNS.test(bodyClean);
+
+      const lc = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+      const line = lc.line + 1;
+
+      // Rule: PC-ACTION-001 (Unauthenticated Server Action with Mutation)
+      if (hasMutation && !hasAuth && isLineChanged(line)) {
+        findings.push({
+          id: `PC-ACTION-AUTH-${filePath}-${line}`,
+          ruleId: 'PC-ACTION-001',
+          category: 'security',
+          title: `Unauthenticated Next.js Server Action (${actionName})`,
+          severity: 'HIGH',
+          description: `Server Action '${actionName}' executes sensitive data mutations without verifying user authentication or session credentials. In Next.js App Router, Server Actions compile to public HTTP POST endpoints accessible to unauthenticated callers.`,
+          file: filePath,
+          line,
+          snippet: getSnippet(line),
+          evidenceTrace: [
+            {
+              file: filePath,
+              line,
+              symbol: actionName,
+              description: `Server Action '${actionName}' is exposed as a public endpoint`
+            },
+            {
+              file: filePath,
+              line,
+              description: 'Action executes database mutation without session authentication check'
+            }
+          ],
+          recommendation: `Add session authentication verification (e.g. const session = await auth(); if (!session?.user) throw new Error("Unauthorized");) before executing mutations.`
+        });
+      }
+
+      // Rule: PC-ACTION-002 (Missing Cache Revalidation in Server Action)
+      if (hasMutation && !hasRevalidate && isLineChanged(line)) {
+        findings.push({
+          id: `PC-ACTION-CACHE-${filePath}-${line}`,
+          ruleId: 'PC-ACTION-002',
+          category: 'reliability',
+          title: `Missing Cache Revalidation in Server Action (${actionName})`,
+          severity: 'MEDIUM',
+          description: `Server Action '${actionName}' mutates data but does not call 'revalidatePath()' or 'revalidateTag()'. Next.js router cache will continue serving stale data after the mutation.`,
+          file: filePath,
+          line,
+          snippet: getSnippet(line),
+          evidenceTrace: [
+            {
+              file: filePath,
+              line,
+              symbol: actionName,
+              description: `Data mutation performed without calling revalidatePath() or revalidateTag()`
+            }
+          ],
+          recommendation: `Call revalidatePath('/path') or revalidateTag('tag') after the mutation to ensure the user interface receives fresh data.`
+        });
+      }
+
+      // Rule: PC-ACTION-003 (Unvalidated Input / Mass Assignment in Server Action)
+      if (hasMutation && node.parameters.length > 0) {
+        const hasValidation = SCHEMA_VALIDATION_PATTERNS.test(bodyClean);
+        const paramNames = node.parameters
+          .map((p) => (ts.isIdentifier(p.name) ? p.name.text : ''))
+          .filter(Boolean);
+        const hasDirectParamPass = paramNames.some(
+          (name) =>
+            new RegExp(`\\b(data|where):\\s*${name}\\b`).test(bodyClean) ||
+            new RegExp(`\\.(create|update|insert)\\(\\s*${name}\\b`).test(bodyClean)
+        );
+
+        if (hasDirectParamPass && !hasValidation && isLineChanged(line)) {
+          findings.push({
+            id: `PC-ACTION-INPUT-${filePath}-${line}`,
+            ruleId: 'PC-ACTION-003',
+            category: 'security',
+            title: `Unvalidated Input / Mass Assignment in Server Action (${actionName})`,
+            severity: 'HIGH',
+            description: `Server Action '${actionName}' passes raw client parameter '${paramNames.join(', ')}' directly into a database mutation without schema validation (e.g., Zod safeParse). This allows mass assignment and unauthorized field modification.`,
+            file: filePath,
+            line,
+            snippet: getSnippet(line),
+            evidenceTrace: [
+              {
+                file: filePath,
+                line,
+                symbol: actionName,
+                description: `Client input passed directly into database mutation without schema validation`
+              }
+            ],
+            recommendation: `Validate input with a schema validator (e.g. const parsed = schema.safeParse(input); if (!parsed.success) throw new Error("Invalid input");) before mutating database records.`
+          });
+        }
+      }
+    };
+
+    const visitActions = (node: ts.Node) => {
+      if (ts.isFunctionDeclaration(node) && node.name) {
+        const isExported =
+          node.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword) ?? false;
+        inspectServerAction(node, node.name.text, isExported);
+      } else if (ts.isVariableStatement(node)) {
+        const isExported =
+          node.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword) ?? false;
+        for (const decl of node.declarationList.declarations) {
+          if (ts.isIdentifier(decl.name) && decl.initializer) {
+            if (ts.isArrowFunction(decl.initializer) || ts.isFunctionExpression(decl.initializer)) {
+              inspectServerAction(decl.initializer, decl.name.text, isExported);
+            }
+          }
+        }
+      }
+      ts.forEachChild(node, visitActions);
+    };
+
+    ts.forEachChild(sourceFile, visitActions);
+    return findings;
   }
 
   public static getInstalledDependencies(filePath: string): Set<string> | null {

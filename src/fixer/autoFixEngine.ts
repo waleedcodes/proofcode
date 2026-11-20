@@ -52,7 +52,9 @@ export class AutoFixEngine {
     'PC-REL-006',
     'PC-IMPORT-001',
     'PC-MUT-001',
-    'PC-DATA-001'
+    'PC-DATA-001',
+    'PC-LEAK-001',
+    'PC-ACTION-002'
   ];
 
   public static isRuleFixable(ruleId: string): boolean {
@@ -211,6 +213,27 @@ export class AutoFixEngine {
             fixedLine = `${indent}if (!${varName}) throw new Error('${varName} not found');\n${originalLine}`;
             fixDescription = `Added null check guard for '${varName}'`;
           }
+          break;
+        }
+
+        // 9. Client Secret Leak in 'use client' file: prefix with NEXT_PUBLIC_
+        case 'PC-LEAK-001': {
+          if (/process\.env\.(?!NEXT_PUBLIC_)([a-zA-Z0-9_]+)/.test(originalLine)) {
+            fixedLine = originalLine.replace(
+              /process\.env\.(?!NEXT_PUBLIC_)([a-zA-Z0-9_]+)/g,
+              'process.env.NEXT_PUBLIC_$1'
+            );
+            fixDescription =
+              "Prefixed private environment variable with 'NEXT_PUBLIC_' for client accessibility";
+          }
+          break;
+        }
+
+        // 10. Missing Cache Revalidation in Server Action: add revalidatePath('/')
+        case 'PC-ACTION-002': {
+          fixedLine = `${originalLine}\n${indent}revalidatePath('/');`;
+          fixDescription =
+            "Added missing Next.js cache revalidation call (revalidatePath('/'))";
           break;
         }
 
