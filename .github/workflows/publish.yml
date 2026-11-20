@@ -1,4 +1,4 @@
-name: Publish Extension (VS Code Marketplace & Open VSX)
+name: Publish (VS Code Marketplace, Open VSX & npm)
 
 on:
   workflow_dispatch:
@@ -43,3 +43,11 @@ jobs:
           fi
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
+
+      - name: Publish to npm Registry
+        if: env.NPM_TOKEN != ''
+        run: |
+          npm config set //registry.npmjs.org/:_authToken ${{ secrets.NPM_TOKEN }}
+          npm publish --access public
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -8,7 +8,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/waleedcodes/proofcode.git"
+    "url": "git+https://github.com/waleedcodes/proofcode.git"
   },
   "bugs": {
     "url": "https://github.com/waleedcodes/proofcode/issues"
@@ -32,8 +32,19 @@
     "git-diff"
   ],
   "main": "./dist/extension.js",
+  "types": "./dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "default": "./dist/proofCodeEngine.js"
+    },
+    "./cli": "./dist/cli.js"
+  },
   "bin": {
     "proofcode": "./dist/cli.js"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "activationEvents": [
     "onStartupFinished"
@@ -155,7 +166,7 @@
   "scripts": {
     "vscode:prepublish": "npm run build",
     "compile": "tsc -p ./ --noEmit",
-    "build": "node esbuild.config.js --production",
+    "build": "node esbuild.config.js --production && tsc --declaration --emitDeclarationOnly --outDir dist/types",
     "build:dev": "node esbuild.config.js",
     "watch": "node esbuild.config.js --watch",
     "test": "vitest run",
@@ -168,7 +179,8 @@
     "demo": "tsx scripts/run-demo.ts",
     "package": "npx @vscode/vsce package --no-dependencies",
     "publish:vsce": "npx @vscode/vsce publish --no-dependencies -p",
-    "publish:ovsx": "npx ovsx publish --no-dependencies -p"
+    "publish:ovsx": "npx ovsx publish --no-dependencies -p",
+    "publish:npm": "npm publish --access public"
   },
   "dependencies": {
     "typescript": "~5.5.4"

@@ -5,9 +5,9 @@ const isWatch = process.argv.includes('--watch');
 
 /** @type {esbuild.BuildOptions[]} */
 const buildConfigs = [
-  // Core Verification Engine (Heavy bundle with TypeScript compiler, lazy-loaded on demand)
+  // Core Verification Engine & Library API (Heavy bundle with TypeScript compiler, lazy-loaded on demand)
   {
-    entryPoints: ['src/engine/proofCodeEngine.ts'],
+    entryPoints: ['src/index.ts'],
     bundle: true,
     outfile: 'dist/proofCodeEngine.js',
     external: ['vscode'],
