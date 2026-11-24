@@ -23,29 +23,68 @@ export class ProjectGraph {
   }
 
   private loadTsConfigAliases(): void {
-    const tsconfigPath = path.join(this.workspaceRoot, 'tsconfig.json');
-    if (!fs.existsSync(tsconfigPath)) return;
+    const tsconfigFiles: string[] = [];
+    const rootTsConfig = path.join(this.workspaceRoot, 'tsconfig.json');
+    if (fs.existsSync(rootTsConfig)) {
+      tsconfigFiles.push(rootTsConfig);
+    }
 
-    try {
-      const raw = fs.readFileSync(tsconfigPath, 'utf8');
-      // Strip comments
-      const cleaned = raw.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '');
-      const parsed = JSON.parse(cleaned);
-      const paths = parsed.compilerOptions?.paths;
-      const baseUrl = parsed.compilerOptions?.baseUrl || '.';
+    // Also look for monorepo tsconfigs (tsconfig.base.json, apps/*/tsconfig.json, packages/*/tsconfig.json)
+    const baseCandidates = ['tsconfig.base.json', 'tsconfig.paths.json', 'tsconfig.build.json'];
+    for (const c of baseCandidates) {
+      const full = path.join(this.workspaceRoot, c);
+      if (fs.existsSync(full)) {
+        tsconfigFiles.push(full);
+      }
+    }
 
-      if (paths && typeof paths === 'object') {
-        for (const [aliasPattern, targetList] of Object.entries(paths)) {
-          if (Array.isArray(targetList) && targetList.length > 0) {
-            const cleanAlias = aliasPattern.replace(/\*$/, '');
-            const cleanTarget = (targetList[0] as string).replace(/\*$/, '');
-            const resolvedTarget = path.resolve(this.workspaceRoot, baseUrl, cleanTarget);
-            this.pathAliases.set(cleanAlias, resolvedTarget);
+    for (const sub of ['apps', 'packages', 'services', 'libs']) {
+      const subDir = path.join(this.workspaceRoot, sub);
+      if (fs.existsSync(subDir) && fs.statSync(subDir).isDirectory()) {
+        try {
+          const entries = fs.readdirSync(subDir, { withFileTypes: true });
+          for (const e of entries) {
+            if (e.isDirectory()) {
+              const subTsConfig = path.join(subDir, e.name, 'tsconfig.json');
+              if (fs.existsSync(subTsConfig)) {
+                tsconfigFiles.push(subTsConfig);
+              }
+            }
+          }
+        } catch (err: unknown) {
+          if (process.env.DEBUG_PROOFCODE) {
+            console.debug('Failed to inspect subdirectories for tsconfig:', err);
           }
         }
       }
-    } catch {
-      // Ignore tsconfig parsing errors
+    }
+
+    for (const tsconfigPath of tsconfigFiles) {
+      try {
+        const raw = fs.readFileSync(tsconfigPath, 'utf8');
+        const cleaned = raw.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '');
+        const parsed = JSON.parse(cleaned);
+        const paths = parsed.compilerOptions?.paths;
+        const configDir = path.dirname(tsconfigPath);
+        const baseUrl = parsed.compilerOptions?.baseUrl
+          ? path.resolve(configDir, parsed.compilerOptions.baseUrl)
+          : configDir;
+
+        if (paths && typeof paths === 'object') {
+          for (const [aliasPattern, targetList] of Object.entries(paths)) {
+            if (Array.isArray(targetList) && targetList.length > 0) {
+              const cleanAlias = aliasPattern.replace(/\*$/, '');
+              const cleanTarget = (targetList[0] as string).replace(/\*$/, '');
+              const resolvedTarget = path.resolve(baseUrl, cleanTarget);
+              this.pathAliases.set(cleanAlias, resolvedTarget);
+            }
+          }
+        }
+      } catch (err: unknown) {
+        if (process.env.DEBUG_PROOFCODE) {
+          console.debug(`Failed to parse tsconfig at ${tsconfigPath}:`, err);
+        }
+      }
     }
   }
 
@@ -109,6 +148,18 @@ export class ProjectGraph {
     // Direct file match
     if (fs.existsSync(basePath) && fs.statSync(basePath).isFile()) {
       return basePath;
+    }
+
+    // Support NodeNext/ESM imports ending in .js mapping to .ts/.tsx files
+    if (basePath.endsWith('.js')) {
+      const tsPath = basePath.slice(0, -3) + '.ts';
+      if (fs.existsSync(tsPath) && fs.statSync(tsPath).isFile()) {
+        return tsPath;
+      }
+      const tsxPath = basePath.slice(0, -3) + '.tsx';
+      if (fs.existsSync(tsxPath) && fs.statSync(tsxPath).isFile()) {
+        return tsxPath;
+      }
     }
 
     // Match with extension
@@ -285,11 +336,30 @@ export class ProjectGraph {
     const callers: AffectedCaller[] = [];
     const directDependents = this.getDependents(defFile);
 
-    // Also include same file callers
+    const baseSymName = sym.parentSymbol || (sym.name.includes('.') ? sym.name.split('.')[0] : sym.name);
+    const methodName = sym.name.includes('.') ? sym.name.split('.').slice(1).join('.') : undefined;
+    const isMethod = Boolean(methodName);
+
+    // 1. Check intra-file callers (other symbols in the same file that call sym)
     const defAnalysis = this.fileAnalyses.get(defFile);
     if (defAnalysis) {
       for (const otherSym of defAnalysis.symbols) {
-        if (otherSym.name !== sym.name && otherSym.calls.includes(sym.name)) {
+        if (otherSym.name === sym.name) continue;
+        if (isMethod && otherSym.kind === 'class') continue;
+
+        let intraCalls = false;
+        if (otherSym.calls.includes(sym.name)) {
+          intraCalls = true;
+        } else if (isMethod && methodName) {
+          if (
+            otherSym.calls.includes(methodName) ||
+            otherSym.calls.some((c) => c.endsWith(`.${methodName}`) || c === `this.${methodName}`)
+          ) {
+            intraCalls = true;
+          }
+        }
+
+        if (intraCalls) {
           const hasTest = this.hasTestCoverage(defFile, otherSym.name, allTestFiles);
           callers.push({
             callerName: otherSym.name,
@@ -302,33 +372,104 @@ export class ProjectGraph {
       }
     }
 
+    // 2. Check downstream dependent files
     for (const depFile of directDependents) {
       const depAnalysis = this.fileAnalyses.get(depFile);
       if (!depAnalysis) continue;
 
-      // Check if depFile imports sym
+      // Check if depFile imports sym directly or imports its parent class/module
       const importsSymbol = depAnalysis.imports.some(
         (imp) =>
           imp.resolvedPath === defFile &&
-          (imp.specifiers.some((s) => s.name === sym.name || s.propertyName === sym.name) ||
+          (imp.specifiers.some(
+            (s) =>
+              s.name === sym.name ||
+              s.name === baseSymName ||
+              s.propertyName === sym.name ||
+              s.propertyName === baseSymName
+          ) ||
             imp.specifiers.some((s) => s.isNamespace || s.isDefault))
       );
 
       if (!importsSymbol) continue;
 
-      // Check which symbols in depFile call sym.name
+      let foundCallerInFile = false;
+
+      // Check which symbols in depFile call sym or its methods
       for (const callerSym of depAnalysis.symbols) {
-        if (
-          callerSym.calls.includes(sym.name) ||
-          callerSym.calls.some((c) => c.endsWith(`.${sym.name}`))
-        ) {
-          const hasTest = this.isTestFile(depFile) || this.hasTestCoverage(depFile, callerSym.name, allTestFiles);
+        if (isMethod && callerSym.kind === 'class') continue;
+        let isCaller = false;
+
+        if (isMethod && methodName) {
+          // Calling the method:
+          // e.g. callerSym.calls has 'AttendanceService.getUnmarkedLectures', 'getUnmarkedLectures',
+          // 'this.attendanceService.getUnmarkedLectures', 'service.getUnmarkedLectures'
+          if (
+            callerSym.calls.includes(sym.name) ||
+            callerSym.calls.includes(methodName) ||
+            callerSym.calls.some((c) => c.endsWith(`.${methodName}`))
+          ) {
+            isCaller = true;
+          }
+        } else {
+          // sym is a class, function, or variable:
+          if (
+            callerSym.calls.includes(sym.name) ||
+            callerSym.calls.some(
+              (c) => c === sym.name || c.startsWith(`${sym.name}.`) || c.endsWith(`.${sym.name}`)
+            )
+          ) {
+            isCaller = true;
+          }
+
+          // If sym is a class, check if callerSym calls any method belonging to sym
+          if (sym.kind === 'class' && defAnalysis) {
+            const classMethods = defAnalysis.symbols
+              .filter(
+                (s) =>
+                  (s.parentSymbol === sym.name || s.name.startsWith(`${sym.name}.`)) &&
+                  s.kind === 'method'
+              )
+              .map((s) => s.name.split('.').slice(1).join('.'));
+            if (
+              classMethods.some(
+                (m) => callerSym.calls.includes(m) || callerSym.calls.some((c) => c.endsWith(`.${m}`))
+              )
+            ) {
+              isCaller = true;
+            }
+          }
+        }
+
+        if (isCaller) {
+          foundCallerInFile = true;
+          const hasTest =
+            this.isTestFile(depFile) || this.hasTestCoverage(depFile, callerSym.name, allTestFiles);
           callers.push({
             callerName: callerSym.name,
             filePath: depFile,
             line: callerSym.startLine,
             hasTest,
-            testFilePath: hasTest ? (this.isTestFile(depFile) ? depFile : this.findMatchingTestFile(depFile, allTestFiles)) : undefined
+            testFilePath: hasTest
+              ? this.isTestFile(depFile)
+                ? depFile
+                : this.findMatchingTestFile(depFile, allTestFiles)
+              : undefined
+          });
+        }
+      }
+
+      // If depFile is a test file importing the symbol, but test blocks (it/test/describe) aren't named symbol functions:
+      if (!foundCallerInFile && this.isTestFile(depFile)) {
+        const fileContent = fs.existsSync(depFile) ? fs.readFileSync(depFile, 'utf8') : '';
+        const targetSearch = methodName || sym.name || baseSymName;
+        if (fileContent.includes(targetSearch)) {
+          callers.push({
+            callerName: path.basename(depFile),
+            filePath: depFile,
+            line: 1,
+            hasTest: true,
+            testFilePath: depFile
           });
         }
       }

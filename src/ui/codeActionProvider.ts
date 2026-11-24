@@ -23,13 +23,28 @@ export class ProofCodeCodeActionProvider implements vscode.CodeActionProvider {
       const indentMatch = lineText.match(/^\s*/);
       const indent = indentMatch ? indentMatch[0] : '';
 
-      // 1. Quick Fix for PC-REL-006: Unhandled Async Operation
+      // 1. Quick Fix for PC-REL-006: Unhandled Async Operation / Floating Promise
       if (diag.code === 'PC-REL-006') {
+        if (!lineText.includes('await') && !lineText.includes('.catch(')) {
+          const awaitAction = new vscode.CodeAction(
+            "🛡️ ProofCode: Add 'await' to asynchronous call",
+            vscode.CodeActionKind.QuickFix
+          );
+          awaitAction.isPreferred = true;
+          awaitAction.diagnostics = [diag];
+          const awaitEdit = new vscode.WorkspaceEdit();
+          awaitEdit.replace(document.uri, line.range, `${indent}await ${lineText.trim()}`);
+          awaitAction.edit = awaitEdit;
+          actions.push(awaitAction);
+        }
+
         const action = new vscode.CodeAction(
           '🛡️ ProofCode: Wrap in try/catch block',
           vscode.CodeActionKind.QuickFix
         );
-        action.isPreferred = true;
+        if (lineText.includes('await')) {
+          action.isPreferred = true;
+        }
         action.diagnostics = [diag];
 
         const edit = new vscode.WorkspaceEdit();

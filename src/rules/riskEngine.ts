@@ -339,13 +339,16 @@ export class RiskEngine {
         }
       }
 
-      // Rule: Missing Error Handling on Async Calls
+      // Rule: Missing Error Handling on Async Calls / Floating Promises (PC-REL-006)
+      // 1. Unhandled Async in Event Listener or Fire-and-Forget Callback
       if (ts.isAwaitExpression(node) && !isTest) {
         const { line, column } = getLineAndColumn(node.getStart(sourceFile));
         if (isLineChanged(line)) {
-          // Check if this await is inside a try-catch block
           let parent: ts.Node | undefined = node.parent;
           let insideTry = false;
+          let insideUnawaitedCallback = false;
+          let callbackContext = '';
+
           while (parent) {
             if (ts.isTryStatement(parent)) {
               insideTry = true;
@@ -354,25 +357,39 @@ export class RiskEngine {
             if (
               ts.isFunctionDeclaration(parent) ||
               ts.isArrowFunction(parent) ||
-              ts.isMethodDeclaration(parent)
+              ts.isMethodDeclaration(parent) ||
+              ts.isFunctionExpression(parent)
             ) {
+              // Check if this function is passed directly as a callback to an unhandled event listener or timer
+              const callParent = parent.parent;
+              if (callParent && ts.isCallExpression(callParent)) {
+                const callExprText = callParent.expression.getText(sourceFile);
+                if (
+                  /\b(on|once|addListener|addEventListener|subscribe|setTimeout|setInterval|setImmediate|process\.on)\b/.test(
+                    callExprText
+                  )
+                ) {
+                  insideUnawaitedCallback = true;
+                  callbackContext = callExprText;
+                }
+              }
               break;
             }
             parent = parent.parent;
           }
 
-          if (!insideTry) {
-            // Also check if expression has .catch
+          // In standard async functions / methods, errors naturally bubble up to the caller or framework exception filter.
+          // Only flag if the await is inside an unawaited event/timer callback where rejections cannot propagate.
+          if (insideUnawaitedCallback && !insideTry) {
             const exprText = node.expression.getText(sourceFile);
             if (!exprText.includes('.catch(')) {
               findings.push({
                 id: `PC-ERR-${filePath}-${line}`,
                 ruleId: 'PC-REL-006',
                 category: 'reliability',
-                title: 'Unhandled Asynchronous Operation',
+                title: 'Unhandled Async in Event Listener / Callback',
                 severity: 'LOW',
-                description:
-                  'Async operation is awaited without an enclosing try/catch block or promise catch handler.',
+                description: `Async callback passed to '${callbackContext}' contains 'await' without an enclosing try/catch block, risking unhandled promise rejections that cannot be caught by callers.`,
                 file: filePath,
                 line,
                 column,
@@ -381,12 +398,56 @@ export class RiskEngine {
                   {
                     file: filePath,
                     line,
-                    description: `await ${exprText} executed without try/catch wrapper`
+                    description: `await ${exprText} in '${callbackContext}' callback executed without try/catch wrapper`
                   }
                 ],
                 recommendation:
-                  'Wrap async database and network calls in try/catch to handle potential failures gracefully.'
+                  'Wrap async operations in event handlers and timers in a try/catch block to prevent uncaught exceptions from terminating the process.'
               });
+            }
+          }
+        }
+      }
+
+      // 2. Floating / Unawaited Promise Statement (PC-REL-006)
+      if (ts.isExpressionStatement(node) && !isTest) {
+        const expr = node.expression;
+        if (ts.isCallExpression(expr)) {
+          const callText = expr.expression.getText(sourceFile);
+          const isCaught = callText.endsWith('.catch') || expr.getText(sourceFile).includes('.catch(');
+          if (!isCaught) {
+            const isAsyncCall =
+              /\b(findMany|findUnique|findFirst|create|update|upsert|delete|deleteMany|updateMany|save|remove|query|execute|run|fetch|axios|request|revalidatePath|revalidateTag|sendNotification|publish|emit|dispatch)\b/.test(
+                callText
+              ) ||
+              /\b(db|prisma|repository|repo|api|service|client)\./i.test(callText);
+
+            const isVoid = ts.isVoidExpression(expr);
+
+            if (isAsyncCall && !isVoid) {
+              const { line, column } = getLineAndColumn(expr.getStart(sourceFile));
+              if (isLineChanged(line)) {
+                findings.push({
+                  id: `PC-PROMISE-FLOAT-${filePath}-${line}`,
+                  ruleId: 'PC-REL-006',
+                  category: 'reliability',
+                  title: 'Floating / Unhandled Asynchronous Call',
+                  severity: 'LOW',
+                  description: `Asynchronous call '${callText}(...)' is invoked without 'await', '.catch()', or 'void', risking unhandled promise rejection and lost errors.`,
+                  file: filePath,
+                  line,
+                  column,
+                  snippet: getSnippet(line),
+                  evidenceTrace: [
+                    {
+                      file: filePath,
+                      line,
+                      description: `Call '${expr.getText(sourceFile)}' returns a Promise but is executed without 'await' or '.catch()'`
+                    }
+                  ],
+                  recommendation: `Add 'await' before the call if inside an async function, or chain with '.catch()' / prefix with 'void' to handle errors.`
+                });
+              }
             }
           }
         }
@@ -1333,10 +1394,10 @@ export class RiskEngine {
     const varName = node.name.text;
     const initText = node.initializer.getText(sourceFile);
 
-    const isSingleEntityQuery =
-      /\b(db|prisma|repository|repo|order|user|account)(\.[a-zA-Z0-9_$]+)*\.(findUnique|findOne|findById)\b/i.test(
-        initText
-      );
+    const isDbTarget = /\b(db|prisma|repository|repo|order|user|account)\b/i.test(initText);
+    const isSingleMethod = /\b(findUnique|findOne|findById|findFirst)\b/.test(initText);
+    const isThrowVariant = /\b(findUniqueOrThrow|findFirstOrThrow)\b/.test(initText);
+    const isSingleEntityQuery = isDbTarget && isSingleMethod && !isThrowVariant;
 
     if (!isSingleEntityQuery) return;
 
@@ -1356,22 +1417,65 @@ export class RiskEngine {
     let hasNullCheck = false;
     let unsafeDereference: { line: number; text: string } | null = null;
 
+    const exitsEarly = (targetNode: ts.Node): boolean => {
+      if (ts.isReturnStatement(targetNode) || ts.isThrowStatement(targetNode)) {
+        return true;
+      }
+      let exits = false;
+      const visitExit = (n: ts.Node) => {
+        if (ts.isReturnStatement(n) || ts.isThrowStatement(n)) {
+          exits = true;
+        }
+        ts.forEachChild(n, visitExit);
+      };
+      ts.forEachChild(targetNode, visitExit);
+      return exits;
+    };
+
     for (let i = varDeclIndex + 1; i < statements.length; i++) {
       const stmt = statements[i];
 
-      if (
-        ts.isIfStatement(stmt) &&
-        (new RegExp(`!\\s*${varName}\\b`).test(stmt.expression.getText(sourceFile)) ||
-          new RegExp(`${varName}\\s*(===|==)\\s*(null|undefined)`).test(
-            stmt.expression.getText(sourceFile)
-          ))
-      ) {
-        hasNullCheck = true;
-        break;
+      // If statement checking for absence of varName and exiting early: protects all subsequent code
+      if (ts.isIfStatement(stmt)) {
+        const cond = stmt.expression.getText(sourceFile);
+        const isNegativeCheck =
+          new RegExp(`!\\s*${varName}\\b`).test(cond) ||
+          new RegExp(`${varName}\\s*(===|==)\\s*(null|undefined)`).test(cond);
+        if (isNegativeCheck && exitsEarly(stmt.thenStatement)) {
+          hasNullCheck = true;
+          break;
+        }
       }
 
       const checkNode = (n: ts.Node) => {
         if (hasNullCheck || unsafeDereference) return;
+
+        // Positive guard: if (varName) { ... } or if (varName !== null) { ... }
+        if (ts.isIfStatement(n)) {
+          const cond = n.expression.getText(sourceFile);
+          const isPositiveGuard =
+            new RegExp(`(^|\\b)${varName}(\\s*&&|\\s*!==|\\s*!=|$)`).test(cond) ||
+            new RegExp(`Boolean\\(${varName}\\)`).test(cond);
+          if (isPositiveGuard) {
+            // Body inside thenStatement is safe; only check elseStatement if present
+            if (n.elseStatement) {
+              ts.forEachChild(n.elseStatement, checkNode);
+            }
+            return;
+          }
+        }
+
+        // Ternary guard: varName ? varName.prop : fallback
+        if (ts.isConditionalExpression(n)) {
+          const cond = n.condition.getText(sourceFile);
+          if (new RegExp(`(^|\\b)${varName}(\\s*&&|\\s*!==|\\s*!=|$)`).test(cond)) {
+            if (n.whenFalse) {
+              ts.forEachChild(n.whenFalse, checkNode);
+            }
+            return;
+          }
+        }
+
         if (ts.isPropertyAccessExpression(n)) {
           if (
             ts.isIdentifier(n.expression) &&

@@ -159,9 +159,12 @@ export class AutoFixEngine {
           break;
         }
 
-        // 5. Unhandled Async Operation: Wrap in try/catch block
+        // 5. Unhandled Async Operation / Floating Promise: PC-REL-006
         case 'PC-REL-006': {
-          if (originalLine.includes('await') && !originalLine.includes('try {')) {
+          if (!originalLine.includes('await') && !originalLine.includes('.catch(')) {
+            fixedLine = `${indent}await ${originalLine.trim()}`;
+            fixDescription = "Added missing 'await' before asynchronous call";
+          } else if (originalLine.includes('await') && !originalLine.includes('try {')) {
             fixedLine = `${indent}try {\n${indent}  ${originalLine.trim()}\n${indent}} catch (error) {\n${indent}  console.error('Async operation failed:', error);\n${indent}}`;
             fixDescription = 'Wrapped unhandled async operation in try/catch block';
           }

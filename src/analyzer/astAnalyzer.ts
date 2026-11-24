@@ -33,7 +33,7 @@ export class AstAnalyzer {
     const extractCallsFromNode = (node: ts.Node): string[] => {
       const calls: string[] = [];
       const visitCall = (n: ts.Node) => {
-        if (ts.isCallExpression(n)) {
+        if (ts.isCallExpression(n) || ts.isNewExpression(n)) {
           const expression = n.expression;
           if (ts.isIdentifier(expression)) {
             calls.push(expression.text);
@@ -41,6 +41,10 @@ export class AstAnalyzer {
             calls.push(expression.getText(sourceFile));
             calls.push(expression.name.text);
           }
+        }
+        // Capture type references (constructors, type annotations, injected services)
+        if (ts.isTypeReferenceNode(n) && ts.isIdentifier(n.typeName)) {
+          calls.push(n.typeName.text);
         }
         ts.forEachChild(n, visitCall);
       };
@@ -231,7 +235,7 @@ export class AstAnalyzer {
           endColumn: end.column,
           isExported,
           isDefaultExport: isDefault,
-          calls: []
+          calls: extractCallsFromNode(node)
         });
 
         if (isExported) {

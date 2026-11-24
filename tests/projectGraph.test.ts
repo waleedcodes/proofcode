@@ -53,4 +53,40 @@ export function handleOrder(userId: string) {
     expect(impact.changedSymbols[0].callers[0].callerName).toBe('handleOrder');
     expect(impact.untestedCallersCount).toBe(1);
   });
+
+  it('should detect intra-file callers and class-level method callers', async () => {
+    const servicePath = path.join(tempDir, 'paymentService.ts');
+    fs.writeFileSync(
+      servicePath,
+      `export class PaymentService {
+  validateCard(num: string) {
+    return num.length === 16;
+  }
+
+  processPayment(num: string) {
+    if (this.validateCard(num)) {
+      return true;
+    }
+    return false;
+  }
+}`,
+      'utf8'
+    );
+
+    const graph = new ProjectGraph(tempDir);
+    await graph.buildGraph([servicePath]);
+
+    // Touch validateCard method (line 2)
+    const changedLinesMap = new Map<string, number[]>();
+    changedLinesMap.set(servicePath, [2]);
+
+    const impact = graph.computeImpact(changedLinesMap);
+    const validateSymbol = impact.changedSymbols.find(
+      (s) => s.symbolName === 'PaymentService.validateCard'
+    );
+
+    expect(validateSymbol).toBeDefined();
+    expect(validateSymbol!.callers.length).toBeGreaterThanOrEqual(1);
+    expect(validateSymbol!.callers[0].callerName).toBe('PaymentService.processPayment');
+  });
 });
