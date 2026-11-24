@@ -44,7 +44,7 @@ jobs:
           if [ -n "${{ secrets.OVSX_PAT }}" ]; then
             npx --yes ovsx publish proofcode-*.vsix --no-dependencies -p ${{ secrets.OVSX_PAT }}
           else
-            npx --yes ovsx publish proofcode-*.vsix --no-dependencies
+            npx --yes ovsx publish proofcode-*.vsix --no-dependencies --trusted-publishing
           fi
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
