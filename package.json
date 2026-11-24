@@ -41,7 +41,7 @@
     "./cli": "./dist/cli.js"
   },
   "bin": {
-    "proofcode": "./dist/cli.js"
+    "proofcode": "dist/cli.js"
   },
   "publishConfig": {
     "access": "public"
