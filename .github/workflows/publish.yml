@@ -2,6 +2,9 @@ name: Publish (VS Code Marketplace, Open VSX & npm)
 
 on:
   workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
   release:
     types: [published]
 
@@ -25,21 +28,23 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
-      - name: Build Extension
-        run: npm run build
+      - name: Build & Package Extension
+        run: |
+          npm run build
+          npx --yes @vscode/vsce package --no-dependencies
 
       - name: Publish to Visual Studio Marketplace
         if: env.VSCE_PAT != ''
-        run: npx --yes @vscode/vsce publish --no-dependencies -p ${{ secrets.VSCE_PAT }}
+        run: npx --yes @vscode/vsce publish --packagePath proofcode-*.vsix -p ${{ secrets.VSCE_PAT }}
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
 
       - name: Publish to Open VSX Registry
         run: |
           if [ -n "${{ secrets.OVSX_PAT }}" ]; then
-            npx --yes ovsx publish --no-dependencies -p ${{ secrets.OVSX_PAT }}
+            npx --yes ovsx publish proofcode-*.vsix --no-dependencies -p ${{ secrets.OVSX_PAT }}
           else
-            npx --yes ovsx publish --no-dependencies
+            npx --yes ovsx publish proofcode-*.vsix --no-dependencies
           fi
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
