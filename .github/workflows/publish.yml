@@ -42,9 +42,9 @@ jobs:
       - name: Publish to Open VSX Registry
         run: |
           if [ -n "${{ secrets.OVSX_PAT }}" ]; then
-            npx --yes ovsx publish proofcode-*.vsix --no-dependencies -p ${{ secrets.OVSX_PAT }}
+            npx ovsx publish --no-dependencies -p ${{ secrets.OVSX_PAT }} proofcode-*.vsix
           else
-            npx --yes ovsx publish proofcode-*.vsix --no-dependencies --trusted-publishing
+            npx ovsx publish --no-dependencies --trusted-publishing proofcode-*.vsix
           fi
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
